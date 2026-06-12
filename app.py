@@ -9,29 +9,11 @@ from oauth2client.service_account import ServiceAccountCredentials
 import json
 import os
 
-# --- REPORTLAB IMPORTS WITH FONT REGISTRATION ---
+# --- FPDF2 IMPORT WITH KANNADA SHAPING SUPPORT ---
 try:
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib import colors
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
-
-    # REGISTER KANNADA FONT
-    # Make sure 'NotoSansKannada-Regular.ttf' is uploaded to your project directory!
-    FONT_PATH = "NotoSansKannada-Regular.ttf" 
-    
-    if os.path.exists(FONT_PATH):
-        pdfmetrics.registerFont(TTFont('KannadaFont', FONT_PATH))
-        FONT_NAME = 'KannadaFont'
-    else:
-        # Fallback warning if file isn't found during initial setup
-        st.sidebar.error("⚠️ NotoSansKannada-Regular.ttf not found! Kannada text will show as blocks in PDFs.")
-        FONT_NAME = 'Helvetica'
-
+    from fpdf import FPDF
 except ImportError:
-    st.error("Please add 'reportlab' to your requirements.txt file to enable PDF downloading.")
+    st.error("Please add 'fpdf2' to your requirements.txt file to enable proper PDF downloading.")
 
 # --- AUTO IP DETECTOR ---
 def get_auto_ip():
@@ -80,67 +62,67 @@ def get_next_item_id(sheet):
         ids = [int(x) for x in col_values[1:] if x.isdigit()]
         return max(ids) + 1 if ids else 1
 
-# --- UPDATED PDF GENERATOR WITH UNICODE SUPPORT ---
+# --- FIXED PDF GENERATOR (FPDF2 PERFECT COMPLEX SCRIPT JOINING) ---
 def generate_box_pdf(box_id, dataframe):
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-    story = []
+    # Initialize PDF object
+    pdf = FPDF(orientation="L", unit="mm", format="letter") # Landscape gives table columns room to breathe
+    pdf.set_margin(10)
+    pdf.add_page()
     
-    styles = getSampleStyleSheet()
+    # Register the Kannada Font file sitting in your GitHub repo
+    FONT_PATH = "NotoSansKannada-Regular.ttf"
+    if os.path.exists(FONT_PATH):
+        pdf.add_font("KannadaFont", style="", fname=FONT_PATH)
+        pdf.set_font("KannadaFont", size=10)
+    else:
+        pdf.set_font("Helvetica", size=10)
+        
+    # Title Header Block
+    pdf.set_text_color(26, 35, 126) # Hex #1A237E Equivalent
+    pdf.set_font_size(16)
+    pdf.cell(0, 10, text="RAMANAGAR POLICE STATION MUDDEMAL INVENTORY", new_x="LMARGIN", new_y="NEXT", align="C")
     
-    title_style = ParagraphStyle(
-        'PDFTitle',
-        parent=styles['Heading1'],
-        fontSize=16,
-        leading=20,
-        textColor=colors.HexColor('#1A237E'),
-        alignment=1, 
-        spaceAfter=15
-    )
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font_size(10)
+    pdf.cell(0, 6, text=f"Box Reference ID: {box_id}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, text=f"Generated On: {pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')}", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(5)
     
-    # We apply our registered font to the table content paragraphs
-    normal_style = ParagraphStyle(
-        'PDFNormal',
-        parent=styles['Normal'],
-        fontName=FONT_NAME, # Dynamic assignment based on asset presence
-        fontSize=10,
-        leading=14
-    )
+    # Table Column Widths (Must fit total horizontal printable width ~260mm)
+    col_widths = (20, 40, 45, 40, 75, 40)
+    headers = ["Item ID", "CR / FIR No.", "Section of Law", "PF Number", "Property Description", "Current Status"]
     
-    story.append(Paragraph(f"<b>RAMANAGAR POLICE STATION MUDDEMAL INVENTORY</b>", title_style))
-    story.append(Paragraph(f"<b>Box Reference ID:</b> {box_id}", normal_style))
-    story.append(Paragraph(f"<b>Generated On:</b> {pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')}", normal_style))
-    story.append(Spacer(1, 15))
+    # Render Table Header Row
+    pdf.set_fill_color(26, 35, 126)
+    pdf.set_text_color(255, 255, 255)
+    for i, header in enumerate(headers):
+        pdf.cell(col_widths[i], 8, text=header, border=1, align="L", fill=True)
+    pdf.ln()
     
-    # Header cells use system Helvetica via table commands; Content uses paragraphs mapping Unicode
-    table_data = [["Item ID", "CR / FIR Number", "Section of Law", "PF Number", "Property Description", "Current Status"]]
+    # Render Rows with alternate background coloring
+    pdf.set_text_color(0, 0, 0)
+    fill = False
     
     for _, row in dataframe.iterrows():
-        table_data.append([
-            Paragraph(str(row["Item ID"]), normal_style),
-            Paragraph(str(row["CR Number"]), normal_style),
-            Paragraph(str(row["Section of Law"]), normal_style),
-            Paragraph(str(row["PF Number"]), normal_style),
-            Paragraph(str(row["Type of Article"]), normal_style), # Handles Kannada cleanly now
-            Paragraph(str(row["Status"]), normal_style)
-        ])
-        
-    pdf_table = Table(table_data, colWidths=[45, 80, 85, 80, 170, 90])
-    pdf_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A237E')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-        ('TOPPADDING', (0, 0), (-1, 0), 8),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#D3D3D3')),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-    ]))
-    
-    story.append(pdf_table)
-    doc.build(story)
+        if fill:
+            pdf.set_fill_color(245, 245, 245) # Soft grey stripe
+        else:
+            pdf.set_fill_color(255, 255, 255)
+            
+        # Using multi_cell format context or single line cell rendering safely 
+        # FPDF2 auto-shapes complex text matrices like Kannada when mapping Unicode strings
+        pdf.cell(col_widths[0], 8, text=str(row["Item ID"]), border=1, fill=True)
+        pdf.cell(col_widths[1], 8, text=str(row["CR Number"]), border=1, fill=True)
+        pdf.cell(col_widths[2], 8, text=str(row["Section of Law"]), border=1, fill=True)
+        pdf.cell(col_widths[3], 8, text=str(row["PF Number"]), border=1, fill=True)
+        pdf.cell(col_widths[4], 8, text=str(row["Type of Article"]), border=1, fill=True) # Kannada words stay properly aligned
+        pdf.cell(col_widths[5], 8, text=str(row["Status"]), border=1, fill=True)
+        pdf.ln()
+        fill = not fill
+
+    # Save to buffer stream
+    pdf_output = pdf.output()
+    buffer = BytesIO(pdf_output)
     buffer.seek(0)
     return buffer
 
@@ -222,7 +204,7 @@ if choice == "View & Update Box" or scanned_box:
                     mime="application/pdf"
                 )
             except NameError:
-                st.warning("PDF Generation is unavailable because the 'reportlab' package is not installed.")
+                st.warning("PDF Generation engine loading error.")
         else:
             st.info("This box is currently empty.")
 

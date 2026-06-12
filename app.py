@@ -326,7 +326,7 @@ elif choice == "Generate QR Codes":
     
     st.info("?? Enter your Streamlit Cloud Web Link below (Leave out the slash at the end).")
     
-    public_url = st.text_input("Streamlit App Link", value="https://your-app-name.streamlit.app")
+    public_url = st.text_input("Streamlit App Link", value="https://muddemal-system-s3e4dhhy2wdwpsbxhsjxyr.streamlit.app/")
     
     if available_boxes:
         selected_qr_box = st.selectbox("Select Box to generate QR", available_boxes)

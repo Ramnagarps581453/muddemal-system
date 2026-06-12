@@ -7,17 +7,33 @@ import socket
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import json
+import os
 
-# Try to import reportlab for PDF generation
+# --- REPORTLAB IMPORTS WITH FONT REGISTRATION ---
 try:
     from reportlab.lib.pagesizes import letter
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    # REGISTER KANNADA FONT
+    # Make sure 'NotoSansKannada-Regular.ttf' is uploaded to your project directory!
+    FONT_PATH = "NotoSansKannada-Regular.ttf" 
+    
+    if os.path.exists(FONT_PATH):
+        pdfmetrics.registerFont(TTFont('KannadaFont', FONT_PATH))
+        FONT_NAME = 'KannadaFont'
+    else:
+        # Fallback warning if file isn't found during initial setup
+        st.sidebar.error("⚠️ NotoSansKannada-Regular.ttf not found! Kannada text will show as blocks in PDFs.")
+        FONT_NAME = 'Helvetica'
+
 except ImportError:
     st.error("Please add 'reportlab' to your requirements.txt file to enable PDF downloading.")
 
-# --- AUTO IP DETECTOR (For local testing before cloud deployment) ---
+# --- AUTO IP DETECTOR ---
 def get_auto_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -32,15 +48,13 @@ def get_auto_ip():
 if 'pending_items' not in st.session_state:
     st.session_state.pending_items = []
 
-# --- GOOGLE SHEETS SETUP (Supports Local & Cloud) ---
+# --- GOOGLE SHEETS SETUP ---
 @st.cache_resource
 def init_gsheets():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        # 1. Try to use the local file (if you are testing on your computer)
         creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
     except Exception:
-        # 2. Use Streamlit Secrets (when deployed to the cloud)
         creds_dict = json.loads(st.secrets["google_secret"])
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         
@@ -52,7 +66,7 @@ boxes_sheet, items_sheet = init_gsheets()
 
 # --- HELPER FUNCTIONS ---
 def get_row_by_item_id(sheet, item_id):
-    col_values = sheet.col_values(1) # Column 1 is Item ID
+    col_values = sheet.col_values(1)
     try:
         return col_values.index(str(item_id)) + 1
     except ValueError:
@@ -66,50 +80,52 @@ def get_next_item_id(sheet):
         ids = [int(x) for x in col_values[1:] if x.isdigit()]
         return max(ids) + 1 if ids else 1
 
+# --- UPDATED PDF GENERATOR WITH UNICODE SUPPORT ---
 def generate_box_pdf(box_id, dataframe):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     story = []
     
     styles = getSampleStyleSheet()
+    
     title_style = ParagraphStyle(
         'PDFTitle',
         parent=styles['Heading1'],
         fontSize=16,
         leading=20,
         textColor=colors.HexColor('#1A237E'),
-        alignment=1, # Center
+        alignment=1, 
         spaceAfter=15
     )
     
+    # We apply our registered font to the table content paragraphs
     normal_style = ParagraphStyle(
         'PDFNormal',
         parent=styles['Normal'],
+        fontName=FONT_NAME, # Dynamic assignment based on asset presence
         fontSize=10,
         leading=14
     )
     
-    # Header Elements
     story.append(Paragraph(f"<b>RAMANAGAR POLICE STATION MUDDEMAL INVENTORY</b>", title_style))
     story.append(Paragraph(f"<b>Box Reference ID:</b> {box_id}", normal_style))
     story.append(Paragraph(f"<b>Generated On:</b> {pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')}", normal_style))
     story.append(Spacer(1, 15))
     
-    # Build Table Data
+    # Header cells use system Helvetica via table commands; Content uses paragraphs mapping Unicode
     table_data = [["Item ID", "CR / FIR Number", "Section of Law", "PF Number", "Property Description", "Current Status"]]
     
     for _, row in dataframe.iterrows():
         table_data.append([
-            str(row["Item ID"]),
-            str(row["CR Number"]),
-            str(row["Section of Law"]),
-            str(row["PF Number"]),
-            Paragraph(str(row["Type of Article"]), normal_style),
-            str(row["Status"])
+            Paragraph(str(row["Item ID"]), normal_style),
+            Paragraph(str(row["CR Number"]), normal_style),
+            Paragraph(str(row["Section of Law"]), normal_style),
+            Paragraph(str(row["PF Number"]), normal_style),
+            Paragraph(str(row["Type of Article"]), normal_style), # Handles Kannada cleanly now
+            Paragraph(str(row["Status"]), normal_style)
         ])
         
-    # PDF Table Styling
-    pdf_table = Table(table_data, colWidths=[50, 85, 85, 80, 160, 90])
+    pdf_table = Table(table_data, colWidths=[45, 80, 85, 80, 170, 90])
     pdf_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A237E')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -121,7 +137,6 @@ def generate_box_pdf(box_id, dataframe):
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#D3D3D3')),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('FONTSIZE', (0, 1), (-1, -1), 9),
     ]))
     
     story.append(pdf_table)
@@ -132,7 +147,6 @@ def generate_box_pdf(box_id, dataframe):
 # --- STREAMLIT INTERFACE ---
 st.set_page_config(page_title="Ramanagar PS Muddemal System", layout="wide")
 
-# Centered layout titles and description headers
 st.markdown("<h1 style='text-align: center;'>Ramanagar Police Station Muddemal Digital Record Room</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center;'><em>(Connected to Secure Google Cloud)</em></p>", unsafe_allow_html=True)
 st.markdown("---")
@@ -148,7 +162,6 @@ st.sidebar.markdown("---")
 menu = ["View & Update Box", "Register Properties", "Move Property", "Edit / Delete Records", "Generate QR Codes"]
 choice = st.sidebar.selectbox("Navigation Menu", menu, index=0 if scanned_box else 0)
 
-# Fetch all data into Pandas for fast searching
 with st.spinner("Syncing with Google Database..."):
     b_data = boxes_sheet.get_all_records()
     i_data = items_sheet.get_all_records()
@@ -157,10 +170,8 @@ with st.spinner("Syncing with Google Database..."):
 
     available_boxes = boxes_df["Box ID"].tolist() if not boxes_df.empty else []
 
-# --- DISPLAY PROPERTY SEARCH RESULTS IF QUERY IS PRESENT ---
 if search_query:
     st.subheader(f"🔎 Search Results for: '{search_query}'")
-    
     filtered_df = items_df[
         items_df["FIR Number"].astype(str).str.lower().str.contains(search_query) |
         items_df["PF Number"].astype(str).str.lower().str.contains(search_query) |
@@ -176,9 +187,7 @@ if search_query:
         st.info("No matching records found across any box.")
     st.markdown("---")
 
-# =====================================================================
-# WORKFLOW 1: VIEW ITEMS (CLEAN QR VIEW WITH PDF GENERATION)
-# =====================================================================
+# WORKFLOW 1: VIEW ITEMS
 if choice == "View & Update Box" or scanned_box:
     st.subheader("📦 Box Inventory Details")
     
@@ -199,12 +208,11 @@ if choice == "View & Update Box" or scanned_box:
             display_df = box_items.copy()
             display_df["CR Number"] = display_df["FIR Number"].astype(str) + "/" + display_df["FIR Year"].astype(str)
             display_df["PF Number"] = display_df["PF Number"].astype(str) + "/" + display_df["PF Year"].astype(str)
-            raw_pdf_df = display_df.copy() # Safe copy for parsing to ReportLab
+            raw_pdf_df = display_df.copy()
             
             display_df = display_df[["Item ID", "CR Number", "Section of Law", "PF Number", "Type of Article", "Status"]]
             st.dataframe(display_df.set_index('Item ID'), use_container_width=True)
             
-            # PDF Generation Button Trigger
             try:
                 pdf_data = generate_box_pdf(box_id, raw_pdf_df)
                 st.download_button(
@@ -218,9 +226,7 @@ if choice == "View & Update Box" or scanned_box:
         else:
             st.info("This box is currently empty.")
 
-# =====================================================================
 # WORKFLOW 2: REGISTER & BULK ADD ITEMS
-# =====================================================================
 elif choice == "Register Properties":
     st.subheader("Register & Add Properties")
     tab1, tab2 = st.tabs(["Add Properties to a Box", "Create a New Box"])
@@ -306,20 +312,16 @@ elif choice == "Register Properties":
         else:
             st.info("Please create a box in the 'Create a New Box' tab first.")
 
-# =====================================================================
-# WORKFLOW 3: MOVE PROPERTY BETWEEN BOXES
-# =====================================================================
+# WORKFLOW 3: MOVE PROPERTY
 elif choice == "Move Property":
     st.subheader("Bulk Move Properties Between Boxes")
     
     if len(available_boxes) > 1:
         source_box = st.selectbox("Select the Current Box (Where properties are now)", available_boxes)
-        
         box_items = items_df[items_df["Box ID"] == source_box].copy()
         
         if not box_items.empty:
             st.write(f"### Select Properties inside {source_box} to move:")
-            
             box_items["CR Number"] = box_items["FIR Number"].astype(str) + "/" + box_items["FIR Year"].astype(str)
             box_items.insert(0, "Select to Move", False)
             
@@ -335,7 +337,6 @@ elif choice == "Move Property":
             
             if not selected_items.empty:
                 st.write(f"**You have selected {len(selected_items)} property(ies) to move.**")
-                
                 destination_boxes = [b for b in available_boxes if b != source_box]
                 new_box = st.selectbox("Select Destination Box", destination_boxes)
                 
@@ -344,7 +345,7 @@ elif choice == "Move Property":
                         for index, row in selected_items.iterrows():
                             item_id = row["Item ID"]
                             row_idx = get_row_by_item_id(items_sheet, item_id)
-                            items_sheet.update_cell(row_idx, 2, new_box) # Column 2 is Box ID
+                            items_sheet.update_cell(row_idx, 2, new_box)
                     st.success(f"Successfully moved items to {new_box}!")
                     st.rerun()
         else:
@@ -352,25 +353,18 @@ elif choice == "Move Property":
     else:
         st.info("You need at least two boxes created to use the move feature.")
 
-# =====================================================================
-# WORKFLOW 4: EDIT / DELETE / STATUS UPDATE RECORDS
-# =====================================================================
+# WORKFLOW 4: EDIT / DELETE
 elif choice == "Edit / Delete Records":
     st.subheader("Edit or Permanently Delete Records")
-    
     if available_boxes:
         target_box = st.selectbox("Find property located in Box:", available_boxes)
-        
         box_items = items_df[items_df["Box ID"] == target_box].copy()
         
         if not box_items.empty:
             box_items["Full FIR"] = box_items["FIR Number"].astype(str) + " / " + box_items["FIR Year"].astype(str)
             fir_list = box_items["Full FIR"].unique().tolist()
-            
             selected_fir = st.selectbox("Select FIR Number in this Box:", fir_list)
-            
             f_no, f_year = selected_fir.split(" / ")
-            
             fir_items = box_items[(box_items["FIR Number"].astype(str) == f_no) & (box_items["FIR Year"].astype(str) == f_year)]
             
             if not fir_items.empty:
@@ -379,7 +373,6 @@ elif choice == "Edit / Delete Records":
                 
                 for index, row in fir_items.iterrows():
                     item_id = row['Item ID']
-                    
                     col1, col2 = st.columns([6, 1])
                     with col1:
                         st.markdown(f"**Item ID {item_id}:** {row['Type of Article']} (PF: {row['PF Number']}/{row['PF Year']}, Sec: {row['Section of Law']}) | *Current Status: {row['Status']}*")
@@ -413,32 +406,24 @@ elif choice == "Edit / Delete Records":
                                 items_sheet.update_cell(row_idx, 9, e_status)
                             st.success("Record updated successfully!")
                             st.rerun()
-                    
                     st.markdown("---")
         else:
             st.info(f"No properties are currently stored in {target_box}.")
     else:
         st.info("No boxes available.")
 
-# =====================================================================
 # WORKFLOW 5: GENERATE QR CODES
-# =====================================================================
 elif choice == "Generate QR Codes":
     st.subheader("🖨️ Print Static Box QR Codes")
-    
     public_url = "https://muddemal-system-s3e4dhhy2wdwpsbxhsjxyr.streamlit.app/"
-    
     if public_url.endswith("/"):
         public_url = public_url[:-1]
         
     if available_boxes:
         selected_qr_box = st.selectbox("Select Box to generate QR", available_boxes)
-        
-        # Explicit identifier showing chosen box metadata on top of the preview display
         st.info(f"### Generating QR Code Matrix for: {selected_qr_box}")
         
         qr_url = f"{public_url}/?box_id={selected_qr_box}"
-        
         qr = qrcode.QRCode(version=1, box_size=10, border=5)
         qr.add_data(qr_url)
         qr.make(fit=True)
@@ -449,7 +434,6 @@ elif choice == "Generate QR Codes":
         st.image(buf.getvalue(), caption=f"QR Code Link: {qr_url}", width=250)
         
         st.markdown(f"🔗 **[Click here to test opening this box's link]({qr_url})**")
-        
         st.download_button(
             label=f"Download QR Code Sticker for {selected_qr_box}",
             data=buf.getvalue(),

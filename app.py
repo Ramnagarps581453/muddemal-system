@@ -60,12 +60,9 @@ def get_next_item_id(sheet):
 st.set_page_config(page_title="Ramanagar PS Muddemal System", layout="wide")
 
 # --- GLOBAL INJECTION FOR INTELLIGENT AUTO-PRINT LAYOUT ---
-# This style block ensures that normal web viewing remains interactive, 
-# but pressing Ctrl+P immediately transforms the page into a clean Kannada-friendly print layout.
 st.markdown("""
     <style>
     @media print {
-        /* Hide all Streamlit structural sidebars, headers, and interactive buttons */
         [data-testid="stSidebar"] {display: none !important;}
         [data-testid="stHeader"] {display: none !important;}
         footer {visibility: hidden !important;}
@@ -74,7 +71,6 @@ st.markdown("""
         [data-testid="stMetricWidget"] {display: none !important;}
         .stMainBlockContainer {padding: 0rem !important; margin: 0rem !important; max-width: 100% !important;}
         
-        /* Force display of the dedicated print structure */
         .print-container {
             display: block !important;
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -106,7 +102,6 @@ st.markdown("""
         }
     }
     
-    /* Screen Styles for the Hidden Print Container */
     .print-container { font-family: sans-serif; }
     .print-title { color: #1A237E; font-size: 24px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
     .print-subtitle { text-align: center; font-size: 14px; color: #555; margin-bottom: 25px; font-weight: 500; }
@@ -134,11 +129,8 @@ search_query = st.sidebar.text_input("Search FIR, PF, or Article Name").strip().
 
 st.sidebar.markdown("---")
 menu = ["View & Update Box", "Register Properties", "Move Property", "Edit / Delete Records", "Generate QR Codes"]
-
-# Fix: If a QR code is scanned, default to "View & Update Box", but allow choice to change freely
 choice = st.sidebar.selectbox("Navigation Menu", menu, index=0)
 
-# Clear QR memory button if param exists to allow resetting the view completely
 if scanned_box:
     if st.sidebar.button("🔄 Clear Scanned Box Filter"):
         st.query_params.clear()
@@ -165,7 +157,17 @@ if search_query:
         filtered_df["CR Number"] = filtered_df["FIR Number"].astype(str) + "/" + filtered_df["FIR Year"].astype(str)
         filtered_df["PF Number Formatted"] = filtered_df["PF Number"].astype(str) + "/" + filtered_df["PF Year"].astype(str)
         display_search = filtered_df[["Item ID", "Box ID", "CR Number", "Section of Law", "PF Number Formatted", "Type of Article", "Status"]]
-        st.dataframe(display_search.set_index('Item ID'), use_container_width=True)
+        
+        # Use data editor with auto-width configurations to prevent truncation
+        st.data_editor(
+            display_search.set_index('Item ID'), 
+            use_container_width=True,
+            disabled=True,
+            column_config={
+                "Section of Law": st.column_config.TextColumn(width="medium"),
+                "Type of Article": st.column_config.TextColumn(width="large")
+            }
+        )
     else:
         st.info("No matching records found across any box.")
     st.markdown("---")
@@ -176,7 +178,6 @@ if search_query:
 if choice == "View & Update Box":
     st.subheader("📦 Box Inventory Details")
     
-    # Check if we should auto-select a box from a QR code scan
     if scanned_box and scanned_box in available_boxes:
         box_id = st.selectbox("Selected Box", available_boxes, index=available_boxes.index(scanned_box))
     elif available_boxes:
@@ -196,9 +197,24 @@ if choice == "View & Update Box":
             # --- INTERACTIVE SCREEN UI ---
             st.markdown(f"### Properties currently inside **{box_id}**:")
             clean_display_df = display_df[["Item ID", "CR Number", "Section of Law", "PF Number", "Type of Article", "Status"]]
-            st.dataframe(clean_display_df.set_index('Item ID'), use_container_width=True)
             
-            # --- INVISIBLE PRINT LAYOUT GENERATION (Triggers only when Ctrl+P is pressed) ---
+            # CRITICAL FIX: Replaced st.dataframe with st.data_editor and set specific text widths 
+            # so long Sections of Law and Kannada script wrap or stay fully viewable without clipping.
+            st.data_editor(
+                clean_display_df.set_index('Item ID'), 
+                use_container_width=True,
+                disabled=True,
+                hide_index=False,
+                column_config={
+                    "CR Number": st.column_config.TextColumn(width="small"),
+                    "Section of Law": st.column_config.TextColumn(width="medium"),
+                    "PF Number": st.column_config.TextColumn(width="small"),
+                    "Type of Article": st.column_config.TextColumn(width="large"),
+                    "Status": st.column_config.TextColumn(width="small"),
+                }
+            )
+            
+            # --- INVISIBLE PRINT LAYOUT GENERATION ---
             timestamp = pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')
             html_output = f"""
             <div class="print-container" style="display: none;">
@@ -215,9 +231,9 @@ if choice == "View & Update Box":
                         <tr>
                             <th style="width: 8%;">Item ID</th>
                             <th style="width: 15%;">CR / FIR No.</th>
-                            <th style="width: 15%;">Section of Law</th>
+                            <th style="width: 18%;">Section of Law</th>
                             <th style="width: 15%;">PF Number</th>
-                            <th style="width: 35%;">Property Description</th>
+                            <th style="width: 32%;">Property Description</th>
                             <th style="width: 12%;">Current Status</th>
                         </tr>
                     </thead>
@@ -277,7 +293,7 @@ elif choice == "Register Properties":
                 with st.expander(f"View {len(box_items)} items already inside {target_box}"):
                     view_df = box_items.copy()
                     view_df["CR Number"] = view_df["FIR Number"].astype(str) + "/" + view_df["FIR Year"].astype(str)
-                    st.dataframe(view_df[["CR Number", "Type of Article"]], use_container_width=True, hide_index=True)
+                    st.data_editor(view_df[["CR Number", "Type of Article"]], use_container_width=True, disabled=True, hide_index=True)
             else:
                 st.caption(f"{target_box} is currently empty.")
             
@@ -353,7 +369,10 @@ elif choice == "Move Property":
             edited_items_df = st.data_editor(
                 box_items[["Select to Move", "Item ID", "CR Number", "Type of Article", "Status"]],
                 hide_index=True,
-                column_config={"Select to Move": st.column_config.CheckboxColumn(required=True)},
+                column_config={
+                    "Select to Move": st.column_config.CheckboxColumn(required=True),
+                    "Type of Article": st.column_config.TextColumn(width="large")
+                },
                 disabled=["Item ID", "CR Number", "Type of Article", "Status"], 
                 use_container_width=True
             )
@@ -419,7 +438,7 @@ elif choice == "Edit / Delete Records":
                         with colD: e_pf = st.text_input("PF Number", value=row['PF Number'], key=f"p_{item_id}")
                         with colE: e_pf_year = st.text_input("PF Year", value=row['PF Year'], key=f"py_{item_id}")
                             
-                        e_item_name = st.text_input("Type of Article", value=row['Type of Article'], key=f"n_{item_id}")
+                        e_item_name = st.text_input("Type of Article", value=row['Type_of_Article'] if 'Type_of_Article' in row else row.get('Type of Article', ''), key=f"n_{item_id}")
                         e_status = st.selectbox("Change Status", ["In Room", "Submitted to Court with Charge Sheet", "Released to Owner", "Sent to FSL", "Disposed / Destroyed"], index=["In Room", "Submitted to Court with Charge Sheet", "Released to Owner", "Sent to FSL", "Disposed / Destroyed"].index(row['Status']) if row['Status'] in ["In Room", "Submitted to Court with Charge Sheet", "Released to Owner", "Sent to FSL", "Disposed / Destroyed"] else 0, key=f"st_{item_id}")
                         
                         if st.button("Save Changes", type="primary", key=f"save_{item_id}"):

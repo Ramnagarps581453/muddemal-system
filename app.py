@@ -131,15 +131,17 @@ def generate_box_pdf(box_id, dataframe):
 
 # --- STREAMLIT INTERFACE ---
 st.set_page_config(page_title="Ramanagar PS Muddemal System", layout="wide")
-st.title("?? Ramanagar Police Station Muddemal Room")
-st.markdown("*(Connected to Secure Google Cloud)*")
+
+# Centered layout titles and description headers
+st.markdown("<h1 style='text-align: center;'>Ramanagar Police Station Muddemal Digital Record Room</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center;'><em>(Connected to Secure Google Cloud)</em></p>", unsafe_allow_html=True)
 st.markdown("---")
 
 query_params = st.query_params
 scanned_box = query_params.get("box_id", None)
 
 # --- SIDEBAR SEARCH & NAVIGATION ---
-st.sidebar.header("🔍 Global Search")
+st.sidebar.header("🔍 Property Search")
 search_query = st.sidebar.text_input("Search FIR, PF, or Article Name").strip().lower()
 
 st.sidebar.markdown("---")
@@ -155,7 +157,7 @@ with st.spinner("Syncing with Google Database..."):
 
     available_boxes = boxes_df["Box ID"].tolist() if not boxes_df.empty else []
 
-# --- DISPLAY GLOBAL SEARCH RESULTS IF QUERY IS PRESENT ---
+# --- DISPLAY PROPERTY SEARCH RESULTS IF QUERY IS PRESENT ---
 if search_query:
     st.subheader(f"🔎 Search Results for: '{search_query}'")
     
@@ -220,7 +222,7 @@ if choice == "View & Update Box" or scanned_box:
 # WORKFLOW 2: REGISTER & BULK ADD ITEMS
 # =====================================================================
 elif choice == "Register Properties":
-    st.subheader("?? Register & Add Properties")
+    st.subheader("Register & Add Properties")
     tab1, tab2 = st.tabs(["Add Properties to a Box", "Create a New Box"])
     
     with tab2:
@@ -239,16 +241,16 @@ elif choice == "Register Properties":
 
     with tab1:
         if available_boxes:
-            target_box = st.selectbox("?? Step 1: Select which Box to put properties in", available_boxes)
+            target_box = st.selectbox("Step 1: Select which Box to put properties in", available_boxes)
             
             box_items = items_df[items_df["Box ID"] == target_box]
             if not box_items.empty:
-                with st.expander(f"?? View {len(box_items)} items already inside {target_box}"):
+                with st.expander(f"View {len(box_items)} items already inside {target_box}"):
                     view_df = box_items.copy()
                     view_df["CR Number"] = view_df["FIR Number"].astype(str) + "/" + view_df["FIR Year"].astype(str)
                     st.dataframe(view_df[["CR Number", "Type of Article"]], use_container_width=True, hide_index=True)
             else:
-                st.caption(f"?? {target_box} is currently empty.")
+                st.caption(f"{target_box} is currently empty.")
             
             st.markdown("---")
             st.write("### Step 2: Enter Case Details")
@@ -262,7 +264,7 @@ elif choice == "Register Properties":
             st.markdown("### Step 3: Add Properties for this Case")
             item_name = st.text_input("Type of Article (e.g., 1 Black Wallet, Vivo Mobile Phone)")
             
-            if st.button("? Add Property"):
+            if st.button("Add Property"):
                 if fir_no and item_name and pf_no:
                     st.session_state.pending_items.append({
                         "FIR No": fir_no, "FIR Year": fir_year, "Section": sec_law,
@@ -274,14 +276,14 @@ elif choice == "Register Properties":
             
             if st.session_state.pending_items:
                 st.markdown("---")
-                st.write(f"### ?? Pending Properties to be saved to {target_box}")
+                st.write(f"### Pending Properties to be saved to {target_box}")
                 
                 display_df = pd.DataFrame(st.session_state.pending_items)
                 edited_df = st.data_editor(display_df, num_rows="dynamic", use_container_width=True)
                 
                 colA, colB = st.columns([1, 4])
                 with colA:
-                    if st.button("?? SAVE ALL TO CLOUD", type="primary"):
+                    if st.button("SAVE ALL TO CLOUD", type="primary"):
                         with st.spinner("Saving properties to Google Sheets..."):
                             next_id = get_next_item_id(items_sheet)
                             rows_to_add = []
@@ -308,10 +310,10 @@ elif choice == "Register Properties":
 # WORKFLOW 3: MOVE PROPERTY BETWEEN BOXES
 # =====================================================================
 elif choice == "Move Property":
-    st.subheader("?? Bulk Move Properties Between Boxes")
+    st.subheader("Bulk Move Properties Between Boxes")
     
     if len(available_boxes) > 1:
-        source_box = st.selectbox("1?? Select the Current Box (Where properties are now)", available_boxes)
+        source_box = st.selectbox("Select the Current Box (Where properties are now)", available_boxes)
         
         box_items = items_df[items_df["Box ID"] == source_box].copy()
         
@@ -335,9 +337,9 @@ elif choice == "Move Property":
                 st.write(f"**You have selected {len(selected_items)} property(ies) to move.**")
                 
                 destination_boxes = [b for b in available_boxes if b != source_box]
-                new_box = st.selectbox("2?? Select Destination Box", destination_boxes)
+                new_box = st.selectbox("Select Destination Box", destination_boxes)
                 
-                if st.button(f"?? Move Selected Properties to {new_box}", type="primary"):
+                if st.button(f"Move Selected Properties to {new_box}", type="primary"):
                     with st.spinner("Moving items in cloud..."):
                         for index, row in selected_items.iterrows():
                             item_id = row["Item ID"]
@@ -354,10 +356,10 @@ elif choice == "Move Property":
 # WORKFLOW 4: EDIT / DELETE / STATUS UPDATE RECORDS
 # =====================================================================
 elif choice == "Edit / Delete Records":
-    st.subheader("?? Edit or Permanently Delete Records")
+    st.subheader("Edit or Permanently Delete Records")
     
     if available_boxes:
-        target_box = st.selectbox("1?? Find property located in Box:", available_boxes)
+        target_box = st.selectbox("Find property located in Box:", available_boxes)
         
         box_items = items_df[items_df["Box ID"] == target_box].copy()
         
@@ -365,14 +367,14 @@ elif choice == "Edit / Delete Records":
             box_items["Full FIR"] = box_items["FIR Number"].astype(str) + " / " + box_items["FIR Year"].astype(str)
             fir_list = box_items["Full FIR"].unique().tolist()
             
-            selected_fir = st.selectbox("2?? Select FIR Number in this Box:", fir_list)
+            selected_fir = st.selectbox("Select FIR Number in this Box:", fir_list)
             
             f_no, f_year = selected_fir.split(" / ")
             
             fir_items = box_items[(box_items["FIR Number"].astype(str) == f_no) & (box_items["FIR Year"].astype(str) == f_year)]
             
             if not fir_items.empty:
-                st.write(f"### ?? Properties under CR {selected_fir} in {target_box}:")
+                st.write(f"### Properties under CR {selected_fir} in {target_box}:")
                 st.markdown("---")
                 
                 for index, row in fir_items.iterrows():
@@ -382,13 +384,13 @@ elif choice == "Edit / Delete Records":
                     with col1:
                         st.markdown(f"**Item ID {item_id}:** {row['Type of Article']} (PF: {row['PF Number']}/{row['PF Year']}, Sec: {row['Section of Law']}) | *Current Status: {row['Status']}*")
                     with col2:
-                        if st.button("??? Delete", key=f"del_{item_id}"):
+                        if st.button("Delete", key=f"del_{item_id}"):
                             with st.spinner("Deleting record..."):
                                 row_idx = get_row_by_item_id(items_sheet, item_id)
                                 items_sheet.delete_rows(row_idx)
                             st.rerun()
                     
-                    with st.expander(f"?? Edit Details & Status for Item {item_id}"):
+                    with st.expander(f"Edit Details & Status for Item {item_id}"):
                         colA, colB, colC, colD, colE = st.columns([2, 1, 3, 2, 1])
                         with colA: e_fir = st.text_input("FIR Number", value=row['FIR Number'], key=f"f_{item_id}")
                         with colB: e_fir_year = st.text_input("FIR Year", value=row['FIR Year'], key=f"fy_{item_id}")
@@ -399,7 +401,7 @@ elif choice == "Edit / Delete Records":
                         e_item_name = st.text_input("Type of Article", value=row['Type of Article'], key=f"n_{item_id}")
                         e_status = st.selectbox("Change Status", ["In Room", "Submitted to Court with Charge Sheet", "Released to Owner", "Sent to FSL", "Disposed / Destroyed"], index=["In Room", "Submitted to Court with Charge Sheet", "Released to Owner", "Sent to FSL", "Disposed / Destroyed"].index(row['Status']) if row['Status'] in ["In Room", "Submitted to Court with Charge Sheet", "Released to Owner", "Sent to FSL", "Disposed / Destroyed"] else 0, key=f"st_{item_id}")
                         
-                        if st.button("?? Save Changes", type="primary", key=f"save_{item_id}"):
+                        if st.button("Save Changes", type="primary", key=f"save_{item_id}"):
                             with st.spinner("Saving edits..."):
                                 row_idx = get_row_by_item_id(items_sheet, item_id)
                                 items_sheet.update_cell(row_idx, 3, e_fir)
@@ -431,6 +433,9 @@ elif choice == "Generate QR Codes":
         
     if available_boxes:
         selected_qr_box = st.selectbox("Select Box to generate QR", available_boxes)
+        
+        # Explicit identifier showing chosen box metadata on top of the preview display
+        st.info(f"### Generating QR Code Matrix for: {selected_qr_box}")
         
         qr_url = f"{public_url}/?box_id={selected_qr_box}"
         

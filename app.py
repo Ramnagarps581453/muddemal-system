@@ -59,9 +59,47 @@ def get_next_item_id(sheet):
 # --- STREAMLIT INTERFACE ---
 st.set_page_config(page_title="Ramanagar PS Muddemal System", layout="wide")
 
-# --- GLOBAL INJECTION FOR INTELLIGENT AUTO-PRINT LAYOUT ---
+# --- CUSTOM CSS FOR BOTH SCREEN WRAPPING AND PRINT LAYOUT ---
 st.markdown("""
     <style>
+    /* Global Screen Table Styling to force true multi-line text wrapping */
+    .screen-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 15px 0;
+        font-family: sans-serif;
+        background-color: white;
+        border-radius: 6px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .screen-table th {
+        background-color: #f1f3f6;
+        color: #333333;
+        font-weight: 600;
+        text-align: left;
+        padding: 12px;
+        border-bottom: 2px solid #dee2e6;
+        font-size: 14px;
+    }
+    .screen-table td {
+        padding: 12px;
+        border-bottom: 1px solid #dee2e6;
+        color: #212529;
+        font-size: 14px;
+        vertical-align: top;
+        white-space: normal !important; /* Forces text to drop to the next line instead of cutting off */
+        word-break: break-word;        /* Safeguard for extremely long technical terms or numbers */
+    }
+    .screen-table tr:hover {
+        background-color: #f8f9fa;
+    }
+    .kannada-text {
+        font-size: 15px;
+        line-height: 1.5;
+    }
+
+    /* Print Specific Media Styles */
     @media print {
         [data-testid="stSidebar"] {display: none !important;}
         [data-testid="stHeader"] {display: none !important;}
@@ -70,6 +108,8 @@ st.markdown("""
         button {display: none !important;}
         [data-testid="stMetricWidget"] {display: none !important;}
         .stMainBlockContainer {padding: 0rem !important; margin: 0rem !important; max-width: 100% !important;}
+        
+        .screen-table { display: none !important; } /* Hide interactive screen table on printer */
         
         .print-container {
             display: block !important;
@@ -90,27 +130,33 @@ st.markdown("""
             color: #444 !important;
             margin-bottom: 25px !important;
         }
+        .print-grid { width: 100%; border-collapse: collapse; margin-top: 10px; }
         .print-grid th { 
             background-color: #1A237E !important; 
             color: white !important;
             -webkit-print-color-adjust: exact; 
             print-color-adjust: exact; 
+            padding: 10px;
+            font-size: 14px;
+            border: 1px solid #1A237E;
         }
         .print-grid td {
             color: #000000 !important;
             border: 1px solid #000000 !important;
+            padding: 10px;
+            font-size: 14px;
+            vertical-align: top;
+            white-space: normal !important;
+            word-break: break-word;
         }
     }
     
-    .print-container { font-family: sans-serif; }
+    /* Screen Fallbacks for Hidden Print Elements */
+    .print-container { display: none; }
     .print-title { color: #1A237E; font-size: 24px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
     .print-subtitle { text-align: center; font-size: 14px; color: #555; margin-bottom: 25px; font-weight: 500; }
     .print-meta-table { width: 100%; margin-bottom: 20px; font-size: 15px; }
-    .print-grid { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    .print-grid th { background-color: #1A237E; color: white; font-weight: bold; text-align: left; padding: 10px; border: 1px solid #1A237E; font-size: 14px; }
-    .print-grid td { padding: 10px; border: 1px solid #DDDDDD; font-size: 14px; vertical-align: top; }
     .zebra { background-color: #F9F9F9; }
-    .kannada-text { font-size: 15px; font-weight: 500; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -156,18 +202,13 @@ if search_query:
     if not filtered_df.empty:
         filtered_df["CR Number"] = filtered_df["FIR Number"].astype(str) + "/" + filtered_df["FIR Year"].astype(str)
         filtered_df["PF Number Formatted"] = filtered_df["PF Number"].astype(str) + "/" + filtered_df["PF Year"].astype(str)
-        display_search = filtered_df[["Item ID", "Box ID", "CR Number", "Section of Law", "PF Number Formatted", "Type of Article", "Status"]]
         
-        # Use data editor with auto-width configurations to prevent truncation
-        st.data_editor(
-            display_search.set_index('Item ID'), 
-            use_container_width=True,
-            disabled=True,
-            column_config={
-                "Section of Law": st.column_config.TextColumn(width="medium"),
-                "Type of Article": st.column_config.TextColumn(width="large")
-            }
-        )
+        # Wrapped HTML Table implementation for Search Output
+        search_html = """<table class="screen-table"><thead><tr><th>Item ID</th><th>Box ID</th><th>CR Number</th><th>Section of Law</th><th>PF Number</th><th>Type of Article</th><th>Status</th></tr></thead><tbody>"""
+        for _, row in filtered_df.iterrows():
+            search_html += f"""<tr><td>{row['Item ID']}</td><td>{row['Box ID']}</td><td>{row['CR Number']}</td><td>{row['Section of Law']}</td><td>{row['PF Number Formatted']}</td><td class="kannada-text">{row['Type of Article']}</td><td>{row['Status']}</td></tr>"""
+        search_html += "</tbody></table>"
+        st.markdown(search_html, unsafe_allow_html=True)
     else:
         st.info("No matching records found across any box.")
     st.markdown("---")
@@ -194,30 +235,45 @@ if choice == "View & Update Box":
             display_df["CR Number"] = display_df["FIR Number"].astype(str) + "/" + display_df["FIR Year"].astype(str)
             display_df["PF Number"] = display_df["PF Number"].astype(str) + "/" + display_df["PF Year"].astype(str)
             
-            # --- INTERACTIVE SCREEN UI ---
             st.markdown(f"### Properties currently inside **{box_id}**:")
-            clean_display_df = display_df[["Item ID", "CR Number", "Section of Law", "PF Number", "Type of Article", "Status"]]
             
-            # CRITICAL FIX: Replaced st.dataframe with st.data_editor and set specific text widths 
-            # so long Sections of Law and Kannada script wrap or stay fully viewable without clipping.
-            st.data_editor(
-                clean_display_df.set_index('Item ID'), 
-                use_container_width=True,
-                disabled=True,
-                hide_index=False,
-                column_config={
-                    "CR Number": st.column_config.TextColumn(width="small"),
-                    "Section of Law": st.column_config.TextColumn(width="medium"),
-                    "PF Number": st.column_config.TextColumn(width="small"),
-                    "Type of Article": st.column_config.TextColumn(width="large"),
-                    "Status": st.column_config.TextColumn(width="small"),
-                }
-            )
+            # =====================================================================
+            # FIXED IMPLEMENTATION: NATIVE HTML WITH EXPLICIT COLUMN WRAPPING
+            # =====================================================================
+            # This directly overrides Streamlit's default behaviour, forcing text onto 
+            # new lines below if it grows too long, expanding rows dynamically.
+            screen_html = """
+            <table class="screen-table no-print">
+                <thead>
+                    <tr>
+                        <th style="width: 7%;">Item ID</th>
+                        <th style="width: 12%;">CR Number</th>
+                        <th style="width: 20%;">Section of Law</th>
+                        <th style="width: 12%;">PF Number</th>
+                        <th style="width: 37%;">Type of Article</th>
+                        <th style="width: 12%;">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+            """
+            for _, row in display_df.iterrows():
+                screen_html += f"""
+                    <tr>
+                        <td><strong>{row['Item ID']}</strong></td>
+                        <td>{row['CR Number']}</td>
+                        <td>{row['Section of Law']}</td>
+                        <td>{row['PF Number']}</td>
+                        <td class="kannada-text">{row['Type of Article']}</td>
+                        <td>{row['Status']}</td>
+                    </tr>
+                """
+            screen_html += "</tbody></table>"
+            st.markdown(screen_html, unsafe_allow_html=True)
             
             # --- INVISIBLE PRINT LAYOUT GENERATION ---
             timestamp = pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')
             html_output = f"""
-            <div class="print-container" style="display: none;">
+            <div class="print-container">
                 <div class="print-title">Ramanagar Police Station Muddemal Inventory</div>
                 <div class="print-subtitle">Official Record Room Storage Manifest</div>
                 <table class="print-meta-table">
@@ -293,7 +349,12 @@ elif choice == "Register Properties":
                 with st.expander(f"View {len(box_items)} items already inside {target_box}"):
                     view_df = box_items.copy()
                     view_df["CR Number"] = view_df["FIR Number"].astype(str) + "/" + view_df["FIR Year"].astype(str)
-                    st.data_editor(view_df[["CR Number", "Type of Article"]], use_container_width=True, disabled=True, hide_index=True)
+                    
+                    sub_table = """<table class="screen-table"><thead><tr><th>CR Number</th><th>Type of Article</th></tr></thead><tbody>"""
+                    for _, row in view_df.iterrows():
+                        sub_table += f"""<tr><td>{row['CR Number']}</td><td class="kannada-text">{row['Type of Article']}</td></tr>"""
+                    sub_table += "</tbody></table>"
+                    st.markdown(sub_table, unsafe_allow_html=True)
             else:
                 st.caption(f"{target_box} is currently empty.")
             
@@ -371,7 +432,6 @@ elif choice == "Move Property":
                 hide_index=True,
                 column_config={
                     "Select to Move": st.column_config.CheckboxColumn(required=True),
-                    "Type of Article": st.column_config.TextColumn(width="large")
                 },
                 disabled=["Item ID", "CR Number", "Type of Article", "Status"], 
                 use_container_width=True

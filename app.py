@@ -59,11 +59,72 @@ def get_next_item_id(sheet):
 # --- STREAMLIT INTERFACE ---
 st.set_page_config(page_title="Ramanagar PS Muddemal System", layout="wide")
 
-# This header will automatically vanish when Print Preview Mode is turned on
-st.markdown("<h1 style='text-align: center;'>Ramanagar Police Station Muddemal Digital Record Room</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center;'><em>(Connected to Secure Google Cloud)</em></p>", unsafe_allow_html=True)
-st.markdown("---")
+# --- GLOBAL INJECTION FOR INTELLIGENT AUTO-PRINT LAYOUT ---
+# This style block ensures that normal web viewing remains interactive, 
+# but pressing Ctrl+P immediately transforms the page into a clean Kannada-friendly print layout.
+st.markdown("""
+    <style>
+    @media print {
+        /* Hide all Streamlit structural sidebars, headers, and interactive buttons */
+        [data-testid="stSidebar"] {display: none !important;}
+        [data-testid="stHeader"] {display: none !important;}
+        footer {visibility: hidden !important;}
+        .no-print {display: none !important;}
+        button {display: none !important;}
+        [data-testid="stMetricWidget"] {display: none !important;}
+        .stMainBlockContainer {padding: 0rem !important; margin: 0rem !important; max-width: 100% !important;}
+        
+        /* Force display of the dedicated print structure */
+        .print-container {
+            display: block !important;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            color: #000000 !important;
+        }
+        .print-title {
+            color: #1A237E !important;
+            font-size: 26px !important;
+            font-weight: bold !important;
+            text-align: center !important;
+            margin-bottom: 5px !important;
+            text-transform: uppercase !important;
+        }
+        .print-subtitle {
+            text-align: center !important;
+            font-size: 14px !important;
+            color: #444 !important;
+            margin-bottom: 25px !important;
+        }
+        .print-grid th { 
+            background-color: #1A237E !important; 
+            color: white !important;
+            -webkit-print-color-adjust: exact; 
+            print-color-adjust: exact; 
+        }
+        .print-grid td {
+            color: #000000 !important;
+            border: 1px solid #000000 !important;
+        }
+    }
+    
+    /* Screen Styles for the Hidden Print Container */
+    .print-container { font-family: sans-serif; }
+    .print-title { color: #1A237E; font-size: 24px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
+    .print-subtitle { text-align: center; font-size: 14px; color: #555; margin-bottom: 25px; font-weight: 500; }
+    .print-meta-table { width: 100%; margin-bottom: 20px; font-size: 15px; }
+    .print-grid { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .print-grid th { background-color: #1A237E; color: white; font-weight: bold; text-align: left; padding: 10px; border: 1px solid #1A237E; font-size: 14px; }
+    .print-grid td { padding: 10px; border: 1px solid #DDDDDD; font-size: 14px; vertical-align: top; }
+    .zebra { background-color: #F9F9F9; }
+    .kannada-text { font-size: 15px; font-weight: 500; }
+    </style>
+""", unsafe_allow_html=True)
 
+# Standard Dashboard Branding Headers
+st.markdown("<h1 style='text-align: center;' class='no-print'>Ramanagar Police Station Muddemal Digital Record Room</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center;' class='no-print'><em>(Connected to Secure Google Cloud)</em></p>", unsafe_allow_html=True)
+st.markdown("<hr class='no-print'>", unsafe_allow_html=True)
+
+# --- READ QUERY PARAMETERS FOR QR SCANNING ---
 query_params = st.query_params
 scanned_box = query_params.get("box_id", None)
 
@@ -73,16 +134,25 @@ search_query = st.sidebar.text_input("Search FIR, PF, or Article Name").strip().
 
 st.sidebar.markdown("---")
 menu = ["View & Update Box", "Register Properties", "Move Property", "Edit / Delete Records", "Generate QR Codes"]
-choice = st.sidebar.selectbox("Navigation Menu", menu, index=0 if scanned_box else 0)
 
+# Fix: If a QR code is scanned, default to "View & Update Box", but allow choice to change freely
+choice = st.sidebar.selectbox("Navigation Menu", menu, index=0)
+
+# Clear QR memory button if param exists to allow resetting the view completely
+if scanned_box:
+    if st.sidebar.button("🔄 Clear Scanned Box Filter"):
+        st.query_params.clear()
+        st.rerun()
+
+# --- DATABASE SYNC ---
 with st.spinner("Syncing with Google Database..."):
     b_data = boxes_sheet.get_all_records()
     i_data = items_sheet.get_all_records()
     boxes_df = pd.DataFrame(b_data) if b_data else pd.DataFrame(columns=["Box ID", "Description"])
     items_df = pd.DataFrame(i_data) if i_data else pd.DataFrame(columns=["Item ID", "Box ID", "FIR Number", "FIR Year", "Section of Law", "PF Number", "PF Year", "Type of Article", "Status"])
-
     available_boxes = boxes_df["Box ID"].tolist() if not boxes_df.empty else []
 
+# --- RENDER GLOBAL SEARCH RESULTS ---
 if search_query:
     st.subheader(f"🔎 Search Results for: '{search_query}'")
     filtered_df = items_df[
@@ -100,10 +170,13 @@ if search_query:
         st.info("No matching records found across any box.")
     st.markdown("---")
 
-# WORKFLOW 1: VIEW ITEMS
-if choice == "View & Update Box" or scanned_box:
+# =====================================================================
+# WORKFLOW 1: VIEW & UPDATE BOX
+# =====================================================================
+if choice == "View & Update Box":
     st.subheader("📦 Box Inventory Details")
     
+    # Check if we should auto-select a box from a QR code scan
     if scanned_box and scanned_box in available_boxes:
         box_id = st.selectbox("Selected Box", available_boxes, index=available_boxes.index(scanned_box))
     elif available_boxes:
@@ -120,144 +193,63 @@ if choice == "View & Update Box" or scanned_box:
             display_df["CR Number"] = display_df["FIR Number"].astype(str) + "/" + display_df["FIR Year"].astype(str)
             display_df["PF Number"] = display_df["PF Number"].astype(str) + "/" + display_df["PF Year"].astype(str)
             
-            # --- STRATEGY: NEW WEB-PAGE PRINT MODE FOR PERFECT KANNADA RENDERING ---
-            print_mode = st.checkbox("📄 Switch to Official Print Preview Layout (Fixes Kannada Font Scrambling)")
+            # --- INTERACTIVE SCREEN UI ---
+            st.markdown(f"### Properties currently inside **{box_id}**:")
+            clean_display_df = display_df[["Item ID", "CR Number", "Section of Law", "PF Number", "Type of Article", "Status"]]
+            st.dataframe(clean_display_df.set_index('Item ID'), use_container_width=True)
             
-            if print_mode:
-                # Inject custom CSS style overrides to clear out sidebars and maximize space for clean printing
-                st.markdown("""
-                    <style>
-                        [data-testid="stSidebar"] {display: none !important;}
-                        [data-testid="stHeader"] {display: none !important;}
-                        footer {visibility: hidden !important;}
-                        .stMainBlockContainer {padding-top: 1rem !important; max-width: 100% !important;}
-                        h1, hr {display: none !important;} /* Hides standard dashboard main titles */
-                        
-                        .print-container {
-                            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-                            color: #222;
-                        }
-                        .print-title {
-                            color: #1A237E;
-                            font-size: 24px;
-                            font-weight: bold;
-                            text-align: center;
-                            margin-bottom: 5px;
-                            text-transform: uppercase;
-                        }
-                        .print-subtitle {
-                            text-align: center;
-                            font-size: 14px;
-                            color: #555;
-                            margin-bottom: 25px;
-                            font-weight: 500;
-                        }
-                        .print-meta-table {
-                            width: 100%;
-                            margin-bottom: 20px;
-                            font-size: 15px;
-                        }
-                        .print-grid {
-                            width: 100%;
-                            border-collapse: collapse;
-                            margin-top: 10px;
-                        }
-                        .print-grid th {
-                            background-color: #1A237E !important;
-                            color: white !important;
-                            font-weight: bold;
-                            text-align: left;
-                            padding: 10px;
-                            border: 1px solid #1A237E;
-                            font-size: 14px;
-                        }
-                        .print-grid td {
-                            padding: 10px;
-                            border: 1px solid #DDDDDD;
-                            font-size: 14px;
-                            vertical-align: top;
-                            color: #000000 !important;
-                        }
-                        .zebra {
-                            background-color: #F9F9F9;
-                        }
-                        .kannada-text {
-                            font-size: 15px;
-                            font-weight: 500;
-                        }
-                        @media print {
-                            body { background-color: #FFFFFF; }
-                            .print-grid th { background-color: #1A237E !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                        }
-                    </style>
-                """, unsafe_allow_html=True)
-                
-                # Setup live date string safely
-                timestamp = pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')
-                
-                # Initialize the HTML block structure securely
-                html_output = f"""
-                <div class="print-container">
-                    <div class="print-title">Ramanagar Police Station Muddemal Inventory</div>
-                    <div class="print-subtitle">Official Record Room Storage Manifest</div>
-                    
-                    <table class="print-meta-table">
+            # --- INVISIBLE PRINT LAYOUT GENERATION (Triggers only when Ctrl+P is pressed) ---
+            timestamp = pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')
+            html_output = f"""
+            <div class="print-container" style="display: none;">
+                <div class="print-title">Ramanagar Police Station Muddemal Inventory</div>
+                <div class="print-subtitle">Official Record Room Storage Manifest</div>
+                <table class="print-meta-table">
+                    <tr>
+                        <td><strong>Box Reference ID:</strong> {box_id}</td>
+                        <td style="text-align: right;"><strong>Generated On:</strong> {timestamp}</td>
+                    </tr>
+                </table>
+                <table class="print-grid">
+                    <thead>
                         <tr>
-                            <td><strong>Box Reference ID:</strong> {box_id}</td>
-                            <td style="text-align: right;"><strong>Generated On:</strong> {timestamp}</td>
+                            <th style="width: 8%;">Item ID</th>
+                            <th style="width: 15%;">CR / FIR No.</th>
+                            <th style="width: 15%;">Section of Law</th>
+                            <th style="width: 15%;">PF Number</th>
+                            <th style="width: 35%;">Property Description</th>
+                            <th style="width: 12%;">Current Status</th>
                         </tr>
-                    </table>
-                    
-                    <table class="print-grid">
-                        <thead>
-                            <tr>
-                                <th style="width: 8%;">Item ID</th>
-                                <th style="width: 15%;">CR / FIR No.</th>
-                                <th style="width: 15%;">Section of Law</th>
-                                <th style="width: 15%;">PF Number</th>
-                                <th style="width: 35%;">Property Description</th>
-                                <th style="width: 12%;">Current Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                    </thead>
+                    <tbody>
+            """
+            for idx, row in display_df.reset_index().iterrows():
+                bg_class = 'class="zebra"' if idx % 2 == 0 else ''
+                html_output += f"""
+                        <tr {bg_class}>
+                            <td>{str(row["Item ID"])}</td>
+                            <td>{str(row["CR Number"])}</td>
+                            <td>{str(row["Section of Law"])}</td>
+                            <td>{str(row["PF Number"])}</td>
+                            <td class="kannada-text">{str(row["Type of Article"])}</td>
+                            <td>{str(row["Status"])}</td>
+                        </tr>
                 """
-                
-                # Programmatically append items row-by-row safely wrapping fields inside str() conversions
-                for idx, row in display_df.iterrows():
-                    bg_class = 'class="zebra"' if idx % 2 == 0 else ''
-                    html_output += f"""
-                            <tr {bg_class}>
-                                <td>{str(row["Item ID"])}</td>
-                                <td>{str(row["CR Number"])}</td>
-                                <td>{str(row["Section of Law"])}</td>
-                                <td>{str(row["PF Number"])}</td>
-                                <td class="kannada-text">{str(row["Type of Article"])}</td>
-                                <td>{str(row["Status"])}</td>
-                            </tr>
-                    """
-                
-                # Securely append the closing layout nodes
-                html_output += """
-                        </tbody>
-                    </table>
-                </div>
-                """
-                
-                # Render the single complete HTML string directly onto the screen
-                st.markdown(html_output, unsafe_allow_html=True)
-                
-                st.markdown("---")
-                st.info("💡 **Staff Instruction:** Press **Ctrl + P** (or **Cmd + P** on Mac) right now to print this clean ledger sheet or save it directly as a perfect PDF file. Uncheck the box above to return back to your normal operations.")
-                
-            else:
-                # Normal interactive mode showing standard streamlit tables
-                st.write(f"### Properties currently inside **{box_id}**:")
-                clean_display_df = display_df[["Item ID", "CR Number", "Section of Law", "PF Number", "Type of Article", "Status"]]
-                st.dataframe(clean_display_df.set_index('Item ID'), use_container_width=True)
+            html_output += """
+                    </tbody>
+                </table>
+            </div>
+            """
+            st.markdown(html_output, unsafe_allow_html=True)
+            
+            st.markdown("---")
+            st.info("💡 **Print Instructions:** Need a physical backup manifest? Simply press **Ctrl + P** (or **Cmd + P** on Mac) right now. The page will cleanly isolate just the Kannada ledger sheet table automatically.")
         else:
             st.info("This box is currently empty.")
 
+# =====================================================================
 # WORKFLOW 2: REGISTER & BULK ADD ITEMS
+# =====================================================================
 elif choice == "Register Properties":
     st.subheader("Register & Add Properties")
     tab1, tab2 = st.tabs(["Add Properties to a Box", "Create a New Box"])
@@ -343,7 +335,9 @@ elif choice == "Register Properties":
         else:
             st.info("Please create a box in the 'Create a New Box' tab first.")
 
+# =====================================================================
 # WORKFLOW 3: MOVE PROPERTY
+# =====================================================================
 elif choice == "Move Property":
     st.subheader("Bulk Move Properties Between Boxes")
     
@@ -384,7 +378,9 @@ elif choice == "Move Property":
     else:
         st.info("You need at least two boxes created to use the move feature.")
 
+# =====================================================================
 # WORKFLOW 4: EDIT / DELETE
+# =====================================================================
 elif choice == "Edit / Delete Records":
     st.subheader("Edit or Permanently Delete Records")
     if available_boxes:
@@ -395,6 +391,7 @@ elif choice == "Edit / Delete Records":
             box_items["Full FIR"] = box_items["FIR Number"].astype(str) + " / " + box_items["FIR Year"].astype(str)
             fir_list = box_items["Full FIR"].unique().tolist()
             selected_fir = st.selectbox("Select FIR Number in this Box:", fir_list)
+            
             f_no, f_year = selected_fir.split(" / ")
             fir_items = box_items[(box_items["FIR Number"].astype(str) == f_no) & (box_items["FIR Year"].astype(str) == f_year)]
             
@@ -443,10 +440,12 @@ elif choice == "Edit / Delete Records":
     else:
         st.info("No boxes available.")
 
+# =====================================================================
 # WORKFLOW 5: GENERATE QR CODES
+# =====================================================================
 elif choice == "Generate QR Codes":
     st.subheader("🖨️ Print Static Box QR Codes")
-    public_url = "https://muddemal-system-s3e4dhhy2wdwpsbxhsjxyr.streamlit.app/"
+    public_url = "https://muddemal-system-s3e4dhhy2wdwpsbxhsjxyr.streamlit.app"
     if public_url.endswith("/"):
         public_url = public_url[:-1]
         

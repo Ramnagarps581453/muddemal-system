@@ -9,11 +9,11 @@ from oauth2client.service_account import ServiceAccountCredentials
 import json
 import os
 
-# --- FPDF2 IMPORT WITH KANNADA SHAPING SUPPORT ---
+# --- FPDF2 IMPORT ---
 try:
     from fpdf import FPDF
 except ImportError:
-    st.error("Please add 'fpdf2' to your requirements.txt file to enable proper PDF downloading.")
+    st.error("Please add 'fpdf2' and 'uharfbuzz' to your requirements.txt file to enable proper PDF downloading.")
 
 # --- AUTO IP DETECTOR ---
 def get_auto_ip():
@@ -62,14 +62,14 @@ def get_next_item_id(sheet):
         ids = [int(x) for x in col_values[1:] if x.isdigit()]
         return max(ids) + 1 if ids else 1
 
-# --- FIXED PDF GENERATOR (FPDF2 PERFECT COMPLEX SCRIPT JOINING) ---
+# --- FIXED PDF GENERATOR WITH FULL KANNADA GLYPH JOINING ---
 def generate_box_pdf(box_id, dataframe):
-    # Initialize PDF object
-    pdf = FPDF(orientation="L", unit="mm", format="letter") # Landscape gives table columns room to breathe
+    # Initialize PDF object in Landscape layout
+    pdf = FPDF(orientation="L", unit="mm", format="letter")
     pdf.set_margin(10)
     pdf.add_page()
     
-    # Register the Kannada Font file sitting in your GitHub repo
+    # Register and explicitly configure the Kannada font path
     FONT_PATH = "NotoSansKannada-Regular.ttf"
     if os.path.exists(FONT_PATH):
         pdf.add_font("KannadaFont", style="", fname=FONT_PATH)
@@ -78,7 +78,7 @@ def generate_box_pdf(box_id, dataframe):
         pdf.set_font("Helvetica", size=10)
         
     # Title Header Block
-    pdf.set_text_color(26, 35, 126) # Hex #1A237E Equivalent
+    pdf.set_text_color(26, 35, 126) # Blue header color
     pdf.set_font_size(16)
     pdf.cell(0, 10, text="RAMANAGAR POLICE STATION MUDDEMAL INVENTORY", new_x="LMARGIN", new_y="NEXT", align="C")
     
@@ -88,39 +88,64 @@ def generate_box_pdf(box_id, dataframe):
     pdf.cell(0, 6, text=f"Generated On: {pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')}", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
     
-    # Table Column Widths (Must fit total horizontal printable width ~260mm)
-    col_widths = (20, 40, 45, 40, 75, 40)
+    # Define exact table structure width parameters (Total 255mm)
+    col_widths = [15, 35, 45, 35, 90, 35]
     headers = ["Item ID", "CR / FIR No.", "Section of Law", "PF Number", "Property Description", "Current Status"]
     
     # Render Table Header Row
     pdf.set_fill_color(26, 35, 126)
     pdf.set_text_color(255, 255, 255)
     for i, header in enumerate(headers):
-        pdf.cell(col_widths[i], 8, text=header, border=1, align="L", fill=True)
+        pdf.cell(col_widths[i], 8, text=header, border=1, align="C", fill=True)
     pdf.ln()
     
-    # Render Rows with alternate background coloring
+    # Render Rows with text alignment configurations
     pdf.set_text_color(0, 0, 0)
     fill = False
     
     for _, row in dataframe.iterrows():
         if fill:
-            pdf.set_fill_color(245, 245, 245) # Soft grey stripe
+            pdf.set_fill_color(245, 245, 245) # Zebra stripes alternating line highlight
         else:
             pdf.set_fill_color(255, 255, 255)
             
-        # Using multi_cell format context or single line cell rendering safely 
-        # FPDF2 auto-shapes complex text matrices like Kannada when mapping Unicode strings
-        pdf.cell(col_widths[0], 8, text=str(row["Item ID"]), border=1, fill=True)
-        pdf.cell(col_widths[1], 8, text=str(row["CR Number"]), border=1, fill=True)
-        pdf.cell(col_widths[2], 8, text=str(row["Section of Law"]), border=1, fill=True)
-        pdf.cell(col_widths[3], 8, text=str(row["PF Number"]), border=1, fill=True)
-        pdf.cell(col_widths[4], 8, text=str(row["Type of Article"]), border=1, fill=True) # Kannada words stay properly aligned
-        pdf.cell(col_widths[5], 8, text=str(row["Status"]), border=1, fill=True)
-        pdf.ln()
+        # Extract row fields
+        item_id_str = str(row["Item ID"])
+        cr_str = str(row["CR Number"])
+        sec_str = str(row["Section of Law"])
+        pf_str = str(row["PF Number"])
+        desc_str = str(row["Type of Article"])
+        status_str = str(row["Status"])
+        
+        # Calculate row height dynamically using the property description column width (90mm)
+        # This keeps the layout cell borders uniform across the row block
+        lines = len(pdf.multi_cell(col_widths[4], 8, text=desc_str, dry_run=True))
+        row_height = max(8, lines * 6)
+        
+        # Draw table line row items cleanly using modern text layout routing rules
+        start_x = pdf.get_x()
+        start_y = pdf.get_y()
+        
+        pdf.cell(col_widths[0], row_height, text=item_id_str, border=1, fill=True)
+        pdf.cell(col_widths[1], row_height, text=cr_str, border=1, fill=True)
+        pdf.cell(col_widths[2], row_height, text=sec_str, border=1, fill=True)
+        pdf.cell(col_widths[3], row_height, text=pf_str, border=1, fill=True)
+        
+        # PROPERTY DESCRIPTION COLUMN (Renders the complex text layout with text shaping integration)
+        curr_x = pdf.get_x()
+        curr_y = pdf.get_y()
+        # ENFORCE ADVANCED TEXT SHAPING CONTEXT: Ensures characters bind perfectly
+        with pdf.local_context(text_shaping=True):
+            pdf.multi_cell(col_widths[4], (row_height / lines), text=desc_str, border=1, fill=True, align="L")
+            
+        # Re-align position tracker vector to structural column endpoint
+        pdf.set_xy(curr_x + col_widths[4], curr_y)
+        pdf.cell(col_widths[5], row_height, text=status_str, border=1, fill=True)
+        
+        pdf.ln(row_height)
         fill = not fill
 
-    # Save to buffer stream
+    # Clean compile buffer return streams
     pdf_output = pdf.output()
     buffer = BytesIO(pdf_output)
     buffer.seek(0)
@@ -203,8 +228,8 @@ if choice == "View & Update Box" or scanned_box:
                     file_name=f"Inventory_{box_id}.pdf",
                     mime="application/pdf"
                 )
-            except NameError:
-                st.warning("PDF Generation engine loading error.")
+            except Exception as e:
+                st.error(f"PDF Generation error: {e}")
         else:
             st.info("This box is currently empty.")
 

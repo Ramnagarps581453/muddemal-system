@@ -1,6 +1,6 @@
 streamlit
 pandas
 qrcode
-Pillow
+pillow
 gspread
 oauth2client

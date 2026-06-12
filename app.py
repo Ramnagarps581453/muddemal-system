@@ -176,6 +176,7 @@ if choice == "View & Update Box" or scanned_box:
                             border: 1px solid #DDDDDD;
                             font-size: 14px;
                             vertical-align: top;
+                            color: #000000 !important;
                         }
                         .zebra {
                             background-color: #F9F9F9;
@@ -191,54 +192,59 @@ if choice == "View & Update Box" or scanned_box:
                     </style>
                 """, unsafe_allow_html=True)
                 
-                # HTML template variables setup
+                # Setup live date string safely
                 timestamp = pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')
                 
-                # Build custom responsive table structure
-                table_rows_html = ""
-                for idx, (_, row) in enumerate(display_df.iterrows()):
+                # Initialize the HTML block structure securely
+                html_output = f"""
+                <div class="print-container">
+                    <div class="print-title">Ramanagar Police Station Muddemal Inventory</div>
+                    <div class="print-subtitle">Official Record Room Storage Manifest</div>
+                    
+                    <table class="print-meta-table">
+                        <tr>
+                            <td><strong>Box Reference ID:</strong> {box_id}</td>
+                            <td style="text-align: right;"><strong>Generated On:</strong> {timestamp}</td>
+                        </tr>
+                    </table>
+                    
+                    <table class="print-grid">
+                        <thead>
+                            <tr>
+                                <th style="width: 8%;">Item ID</th>
+                                <th style="width: 15%;">CR / FIR No.</th>
+                                <th style="width: 15%;">Section of Law</th>
+                                <th style="width: 15%;">PF Number</th>
+                                <th style="width: 35%;">Property Description</th>
+                                <th style="width: 12%;">Current Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                """
+                
+                # Programmatically append items row-by-row safely wrapping fields inside str() conversions
+                for idx, row in display_df.iterrows():
                     bg_class = 'class="zebra"' if idx % 2 == 0 else ''
-                    table_rows_html += f"""
-                    <tr {bg_class}>
-                        <td>{row["Item ID"]}</td>
-                        <td>{row["CR Number"]}</td>
-                        <td>{row["Section of Law"]}</td>
-                        <td>{row["PF Number"]}</td>
-                        <td class="kannada-text">{row["Type of Article"]}</td>
-                        <td>{row["Status"]}</td>
-                    </tr>
+                    html_output += f"""
+                            <tr {bg_class}>
+                                <td>{str(row["Item ID"])}</td>
+                                <td>{str(row["CR Number"])}</td>
+                                <td>{str(row["Section of Law"])}</td>
+                                <td>{str(row["PF Number"])}</td>
+                                <td class="kannada-text">{str(row["Type of Article"])}</td>
+                                <td>{str(row["Status"])}</td>
+                            </tr>
                     """
                 
-                # Output HTML view container to interface
-                st.markdown(f"""
-                    <div class="print-container">
-                        <div class="print-title">Ramanagar Police Station Muddemal Inventory</div>
-                        <div class="print-subtitle">Official Record Room Storage Manifest</div>
-                        
-                        <table class="print-meta-table">
-                            <tr>
-                                <td><strong>Box Reference ID:</strong> {box_id}</td>
-                                <td style="text-align: right;"><strong>Generated On:</strong> {timestamp}</td>
-                            </tr>
-                        </table>
-                        
-                        <table class="print-grid">
-                            <thead>
-                                <tr>
-                                    <th style="width: 8%;">Item ID</th>
-                                    <th style="width: 15%;">CR / FIR No.</th>
-                                    <th style="width: 15%;">Section of Law</th>
-                                    <th style="width: 15%;">PF Number</th>
-                                    <th style="width: 35%;">Property Description</th>
-                                    <th style="width: 12%;">Current Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {table_rows_html}
-                            </tbody>
-                        </table>
-                    </div>
-                """, unsafe_allow_html=True)
+                # Securely append the closing layout nodes
+                html_output += """
+                        </tbody>
+                    </table>
+                </div>
+                """
+                
+                # Render the single complete HTML string directly onto the screen
+                st.markdown(html_output, unsafe_allow_html=True)
                 
                 st.markdown("---")
                 st.info("💡 **Staff Instruction:** Press **Ctrl + P** (or **Cmd + P** on Mac) right now to print this clean ledger sheet or save it directly as a perfect PDF file. Uncheck the box above to return back to your normal operations.")

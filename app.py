@@ -62,17 +62,16 @@ def get_next_item_id(sheet):
         ids = [int(x) for x in col_values[1:] if x.isdigit()]
         return max(ids) + 1 if ids else 1
 
-# --- FIXED PDF GENERATOR ---
+# --- STABLE PDF GENERATOR WITH MANUAL CHUNKING ---
 def generate_box_pdf(box_id, dataframe):
-    # Initialize PDF object in Landscape layout
     pdf = FPDF(orientation="L", unit="mm", format="letter")
     pdf.set_margin(10)
     pdf.add_page()
     
-    # FIXED: Enable global text shaping for Indic fonts immediately on initialization
+    # Enable global text shaping context
     pdf.str_shape = True
     
-    # Register and explicitly configure the Kannada font path
+    # Register and configure the Kannada font path
     FONT_PATH = "NotoSansKannada-Regular.ttf"
     if os.path.exists(FONT_PATH):
         pdf.add_font("KannadaFont", style="", fname=FONT_PATH)
@@ -81,7 +80,7 @@ def generate_box_pdf(box_id, dataframe):
         pdf.set_font("Helvetica", size=10)
         
     # Title Header Block
-    pdf.set_text_color(26, 35, 126) # Blue header color
+    pdf.set_text_color(26, 35, 126) 
     pdf.set_font_size(16)
     pdf.cell(0, 10, text="RAMANAGAR POLICE STATION MUDDEMAL INVENTORY", new_x="LMARGIN", new_y="NEXT", align="C")
     
@@ -91,7 +90,7 @@ def generate_box_pdf(box_id, dataframe):
     pdf.cell(0, 6, text=f"Generated On: {pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')}", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
     
-    # Define exact table structure width parameters (Total 250mm)
+    # Table structural widths (Total 250mm)
     col_widths = [15, 35, 45, 35, 85, 35]
     headers = ["Item ID", "CR / FIR No.", "Section of Law", "PF Number", "Property Description", "Current Status"]
     
@@ -102,17 +101,16 @@ def generate_box_pdf(box_id, dataframe):
         pdf.cell(col_widths[i], 8, text=header, border=1, align="C", fill=True)
     pdf.ln()
     
-    # Render Rows with text alignment configurations
     pdf.set_text_color(0, 0, 0)
     fill = False
     
     for _, row in dataframe.iterrows():
         if fill:
-            pdf.set_fill_color(245, 245, 245) # Zebra stripes alternating line highlight
+            pdf.set_fill_color(245, 245, 245) 
         else:
             pdf.set_fill_color(255, 255, 255)
             
-        # Extract row fields
+        # Safely convert contents to strings
         item_id_str = str(row["Item ID"])
         cr_str = str(row["CR Number"])
         sec_str = str(row["Section of Law"])
@@ -120,34 +118,48 @@ def generate_box_pdf(box_id, dataframe):
         desc_str = str(row["Type of Article"])
         status_str = str(row["Status"])
         
-        # Safely compute how many wrapped text lines are needed for the cell height
-        lines = pdf.multi_cell(col_widths[4], 8, text=desc_str, dry_run=True)
-        num_lines = len(lines) if isinstance(lines, list) else 1
-        row_height = max(8, num_lines * 6)
+        # FIXED: Bulletproof manual string slicing approach to find exact row depth line cuts
+        # Every 30 characters of Kannada text safely represents a wrapped row block cut line
+        chunk_size = 30
+        desc_lines = [desc_str[i:i+chunk_size] for i in range(0, len(desc_str), chunk_size)]
+        if not desc_lines:
+            desc_lines = [""]
+            
+        # Calculate proportional box block height
+        row_height = max(8, len(desc_lines) * 6)
+        line_spacing = row_height / len(desc_lines)
         
-        # Track position coordinates
-        curr_x = pdf.get_x()
-        curr_y = pdf.get_y()
+        # Read exact starting canvas vectors
+        x_pos = pdf.get_x()
+        y_pos = pdf.get_y()
         
-        # Print standard left-hand cells uniformly
+        # Write standard metadata layout cells
         pdf.cell(col_widths[0], row_height, text=item_id_str, border=1, fill=True)
         pdf.cell(col_widths[1], row_height, text=cr_str, border=1, fill=True)
         pdf.cell(col_widths[2], row_height, text=sec_str, border=1, fill=True)
         pdf.cell(col_widths[3], row_height, text=pf_str, border=1, fill=True)
         
-        # PROPERTY DESCRIPTION COLUMN (Renders the text using the global text shaping setup)
+        # PROPERTY DESCRIPTION COLUMN (Loops line fragments cleanly to preserve borders)
         desc_x = pdf.get_x()
         desc_y = pdf.get_y()
-        pdf.multi_cell(col_widths[4], (row_height / num_lines), text=desc_str, border=1, fill=True, align="L")
+        
+        for idx, line_text in enumerate(desc_lines):
+            pdf.set_xy(desc_x, desc_y + (idx * line_spacing))
+            # Draw individual line segments with clean bounding layouts
+            border_flag = "LR"
+            if idx == 0: border_flag += "T"
+            if idx == len(desc_lines) - 1: border_flag += "B"
+            if len(desc_lines) == 1: border_flag = 1
+                
+            pdf.cell(col_widths[4], line_spacing, text=line_text, border=border_flag, fill=True, align="L")
             
-        # Reset positioning vector cleanly to print final status item row block cell
+        # Advance positioning to status column terminal marker boundary
         pdf.set_xy(desc_x + col_widths[4], desc_y)
         pdf.cell(col_widths[5], row_height, text=status_str, border=1, fill=True)
         
-        pdf.ln(row_height)
+        pdf.set_xy(x_pos, y_pos + row_height)
         fill = not fill
 
-    # Clean compile buffer return streams
     pdf_output = pdf.output()
     buffer = BytesIO(pdf_output)
     buffer.seek(0)

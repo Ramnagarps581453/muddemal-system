@@ -9,11 +9,16 @@ from oauth2client.service_account import ServiceAccountCredentials
 import json
 import os
 
-# --- HTML TO PDF ENGINE IMPORT ---
+# --- REPORTLAB IMPORTS FOR STABLE PDF HANDLING ---
 try:
-    from xhtml2pdf import pisa
+    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
 except ImportError:
-    st.error("Please add 'xhtml2pdf' to your requirements.txt file to enable proper PDF downloading.")
+    st.error("Please add 'reportlab' to your requirements.txt file to enable proper PDF downloading.")
 
 # --- AUTO IP DETECTOR ---
 def get_auto_ip():
@@ -62,114 +67,118 @@ def get_next_item_id(sheet):
         ids = [int(x) for x in col_values[1:] if x.isdigit()]
         return max(ids) + 1 if ids else 1
 
-# --- PERFECT KANNADA RENDERING ENGINE (HTML TO PDF) ---
+# --- REPORTLAB KANNADA PDF GENERATOR ---
 def generate_box_pdf(box_id, dataframe):
     buffer = BytesIO()
     
-    # Get current timestamp
-    timestamp = pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')
+    # Initialize Document in Landscape
+    doc = SimpleDocTemplate(
+        buffer, 
+        pagesize=landscape(letter),
+        leftMargin=30, 
+        rightMargin=30, 
+        topMargin=30, 
+        bottomMargin=30
+    )
     
-    # Generate HTML Table Content dynamically
-    table_rows_html = ""
-    for idx, row in dataframe.iterrows():
-        bg_class = 'class="zebra"' if idx % 2 == 0 else ''
-        table_rows_html += f"""
-        <tr {bg_class}>
-            <td>{row["Item ID"]}</td>
-            <td>{row["CR Number"]}</td>
-            <td>{row["Section of Law"]}</td>
-            <td>{row["PF Number"]}</td>
-            <td class="kannada-text">{row["Type of Article"]}</td>
-            <td>{row["Status"]}</td>
-        </tr>
-        """
+    story = []
+    styles = getSampleStyleSheet()
+    
+    # Register Kannada font if file exists
+    FONT_PATH = "NotoSansKannada-Regular.ttf"
+    font_name = "Helvetica"
+    if os.path.exists(FONT_PATH):
+        try:
+            pdfmetrics.registerFont(TTFont('KannadaFont', FONT_PATH))
+            font_name = "KannadaFont"
+        except Exception:
+            pass
 
-    # Complete HTML Template with embedded Noto Sans Kannada styling
-    html_template = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <style>
-            @page {{
-                size: letter landscape;
-                margin: 10mm;
-            }}
-            @font-face {{
-                font-family: 'NotoKannada';
-                src: url('NotoSansKannada-Regular.ttf');
-            }}
-            body {{
-                font-family: 'Helvetica', 'NotoKannada', sans-serif;
-                color: #333;
-                font-size: 10pt;
-            }}
-            .header-title {{
-                color: #1A237E;
-                font-size: 16pt;
-                font-weight: bold;
-                text-align: center;
-                margin-bottom: 5px;
-            }}
-            .meta-text {{
-                font-size: 10pt;
-                margin-bottom: 15px;
-            }}
-            table {{
-                width: 100%;
-                border-collapse: collapse;
-            }}
-            th {{
-                background-color: #1A237E;
-                color: white;
-                font-weight: bold;
-                text-align: left;
-                padding: 6px;
-                border: 1px solid #1A237E;
-            }}
-            td {{
-                padding: 6px;
-                border: 1px solid #ddd;
-                vertical-align: top;
-            }}
-            tr.zebra {{
-                background-color: #F5F5F5;
-            }}
-            .kannada-text {{
-                font-family: 'NotoKannada';
-                font-size: 11pt;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="header-title">RAMANAGAR POLICE STATION MUDDEMAL INVENTORY</div>
-        <div class="meta-text">
-            <strong>Box Reference ID:</strong> {box_id}<br/>
-            <strong>Generated On:</strong> {timestamp}
-        </div>
+    # Custom paragraph style rules
+    title_style = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Heading1'],
+        fontName='Helvetica-Bold',
+        fontSize=16,
+        textColor=colors.HexColor("#1A237E"),
+        alignment=1, # Center
+        spaceAfter=10
+    )
+    
+    meta_style = ParagraphStyle(
+        'MetaText',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=10,
+        leading=14,
+        spaceAfter=15
+    )
+    
+    header_cell_style = ParagraphStyle(
+        'HeaderCell',
+        fontName='Helvetica-Bold',
+        fontSize=10,
+        textColor=colors.white,
+        alignment=1 # Center
+    )
+    
+    body_cell_style = ParagraphStyle(
+        'BodyCell',
+        fontName=font_name,
+        fontSize=10,
+        leading=14
+    )
+
+    # Build Header Elements
+    story.append(Paragraph("RAMANAGAR POLICE STATION MUDDEMAL INVENTORY", title_style))
+    timestamp = pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')
+    meta_text = f"<b>Box Reference ID:</b> {box_id}<br/><b>Generated On:</b> {timestamp}"
+    story.append(Paragraph(meta_text, meta_style))
+    
+    # Define Column Headers & Widths (Total 730 points for landscape letter width)
+    headers = ["Item ID", "CR / FIR No.", "Section of Law", "PF Number", "Property Description", "Current Status"]
+    col_widths = [45, 95, 120, 95, 260, 115]
+    
+    table_data = []
+    
+    # Wrap header texts inside Paragraph flowables
+    header_row = [Paragraph(f"<b>{h}</b>", header_cell_style) for h in headers]
+    table_data.append(header_row)
+    
+    # Wrap database table contents
+    for idx, row in dataframe.iterrows():
+        table_data.append([
+            Paragraph(str(row["Item ID"]), body_cell_style),
+            Paragraph(str(row["CR Number"]), body_cell_style),
+            Paragraph(str(row["Section of Law"]), body_cell_style),
+            Paragraph(str(row["PF Number"]), body_cell_style),
+            Paragraph(str(row["Type of Article"]), body_cell_style), # Kannada font gets safely rendered here
+            Paragraph(str(row["Status"]), body_cell_style)
+        ])
         
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 8%;">Item ID</th>
-                    <th style="width: 15%;">CR / FIR No.</th>
-                    <th style="width: 18%;">Section of Law</th>
-                    <th style="width: 15%;">PF Number</th>
-                    <th style="width: 31%;">Property Description</th>
-                    <th style="width: 13%;">Current Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                {table_rows_html}
-            </tbody>
-        </table>
-    </body>
-    </html>
-    """
+    # Build and style ReportLab data grid table structure
+    data_table = Table(table_data, colWidths=col_widths, repeatRows=1)
     
-    # Compile HTML structure directly into the PDF binary buffer stream
-    pisa_status = pisa.CreatePDF(html_template, dest=buffer)
+    t_style = TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1A237E")),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#DDDDDD")),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor("#1A237E")),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ])
     
+    # Add Zebra stripe alternate styling row backgrounds safely
+    for i in range(1, len(table_data)):
+        if i % 2 == 0:
+            t_style.add('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F5F5F5"))
+            
+    data_table.setStyle(t_style)
+    story.append(data_table)
+    
+    # Render full sequence array stream
+    doc.build(story)
     buffer.seek(0)
     return buffer
 

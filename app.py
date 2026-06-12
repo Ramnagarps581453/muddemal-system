@@ -9,17 +9,6 @@ from oauth2client.service_account import ServiceAccountCredentials
 import json
 import os
 
-# --- REPORTLAB IMPORTS FOR STABLE PDF HANDLING ---
-try:
-    from reportlab.lib.pagesizes import letter, landscape
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib import colors
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
-except ImportError:
-    st.error("Please add 'reportlab' to your requirements.txt file to enable proper PDF downloading.")
-
 # --- AUTO IP DETECTOR ---
 def get_auto_ip():
     try:
@@ -67,124 +56,10 @@ def get_next_item_id(sheet):
         ids = [int(x) for x in col_values[1:] if x.isdigit()]
         return max(ids) + 1 if ids else 1
 
-# --- REPORTLAB KANNADA PDF GENERATOR ---
-def generate_box_pdf(box_id, dataframe):
-    buffer = BytesIO()
-    
-    # Initialize Document in Landscape
-    doc = SimpleDocTemplate(
-        buffer, 
-        pagesize=landscape(letter),
-        leftMargin=30, 
-        rightMargin=30, 
-        topMargin=30, 
-        bottomMargin=30
-    )
-    
-    story = []
-    styles = getSampleStyleSheet()
-    
-    # Register Kannada font if file exists
-    FONT_PATH = "NotoSansKannada-Regular.ttf"
-    font_name = "Helvetica"
-    if os.path.exists(FONT_PATH):
-        try:
-            pdfmetrics.registerFont(TTFont('KannadaFont', FONT_PATH))
-            font_name = "KannadaFont"
-        except Exception:
-            pass
-
-    # Custom paragraph style rules
-    title_style = ParagraphStyle(
-        'DocTitle',
-        parent=styles['Heading1'],
-        fontName='Helvetica-Bold',
-        fontSize=16,
-        textColor=colors.HexColor("#1A237E"),
-        alignment=1, # Center
-        spaceAfter=10
-    )
-    
-    meta_style = ParagraphStyle(
-        'MetaText',
-        parent=styles['Normal'],
-        fontName='Helvetica',
-        fontSize=10,
-        leading=14,
-        spaceAfter=15
-    )
-    
-    header_cell_style = ParagraphStyle(
-        'HeaderCell',
-        fontName='Helvetica-Bold',
-        fontSize=10,
-        textColor=colors.white,
-        alignment=1 # Center
-    )
-    
-    body_cell_style = ParagraphStyle(
-        'BodyCell',
-        fontName=font_name,
-        fontSize=10,
-        leading=14
-    )
-
-    # Build Header Elements
-    story.append(Paragraph("RAMANAGAR POLICE STATION MUDDEMAL INVENTORY", title_style))
-    timestamp = pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')
-    meta_text = f"<b>Box Reference ID:</b> {box_id}<br/><b>Generated On:</b> {timestamp}"
-    story.append(Paragraph(meta_text, meta_style))
-    
-    # Define Column Headers & Widths (Total 730 points for landscape letter width)
-    headers = ["Item ID", "CR / FIR No.", "Section of Law", "PF Number", "Property Description", "Current Status"]
-    col_widths = [45, 95, 120, 95, 260, 115]
-    
-    table_data = []
-    
-    # Wrap header texts inside Paragraph flowables
-    header_row = [Paragraph(f"<b>{h}</b>", header_cell_style) for h in headers]
-    table_data.append(header_row)
-    
-    # Wrap database table contents
-    for idx, row in dataframe.iterrows():
-        table_data.append([
-            Paragraph(str(row["Item ID"]), body_cell_style),
-            Paragraph(str(row["CR Number"]), body_cell_style),
-            Paragraph(str(row["Section of Law"]), body_cell_style),
-            Paragraph(str(row["PF Number"]), body_cell_style),
-            Paragraph(str(row["Type of Article"]), body_cell_style), # Kannada font gets safely rendered here
-            Paragraph(str(row["Status"]), body_cell_style)
-        ])
-        
-    # Build and style ReportLab data grid table structure
-    data_table = Table(table_data, colWidths=col_widths, repeatRows=1)
-    
-    t_style = TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1A237E")),
-        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#DDDDDD")),
-        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor("#1A237E")),
-        ('TOPPADDING', (0, 0), (-1, -1), 6),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-    ])
-    
-    # Add Zebra stripe alternate styling row backgrounds safely
-    for i in range(1, len(table_data)):
-        if i % 2 == 0:
-            t_style.add('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F5F5F5"))
-            
-    data_table.setStyle(t_style)
-    story.append(data_table)
-    
-    # Render full sequence array stream
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-
 # --- STREAMLIT INTERFACE ---
 st.set_page_config(page_title="Ramanagar PS Muddemal System", layout="wide")
 
+# This header will automatically vanish when Print Preview Mode is turned on
 st.markdown("<h1 style='text-align: center;'>Ramanagar Police Station Muddemal Digital Record Room</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center;'><em>(Connected to Secure Google Cloud)</em></p>", unsafe_allow_html=True)
 st.markdown("---")
@@ -241,26 +116,138 @@ if choice == "View & Update Box" or scanned_box:
         box_items = items_df[items_df["Box ID"] == box_id]
         
         if not box_items.empty:
-            st.write(f"### Properties currently inside **{box_id}**:")
-            
             display_df = box_items.copy()
             display_df["CR Number"] = display_df["FIR Number"].astype(str) + "/" + display_df["FIR Year"].astype(str)
             display_df["PF Number"] = display_df["PF Number"].astype(str) + "/" + display_df["PF Year"].astype(str)
-            raw_pdf_df = display_df.copy()
             
-            display_df = display_df[["Item ID", "CR Number", "Section of Law", "PF Number", "Type of Article", "Status"]]
-            st.dataframe(display_df.set_index('Item ID'), use_container_width=True)
+            # --- STRATEGY: NEW WEB-PAGE PRINT MODE FOR PERFECT KANNADA RENDERING ---
+            print_mode = st.checkbox("📄 Switch to Official Print Preview Layout (Fixes Kannada Font Scrambling)")
             
-            try:
-                pdf_data = generate_box_pdf(box_id, raw_pdf_df)
-                st.download_button(
-                    label=f"📥 Download Detailed PDF Inventory ({box_id})",
-                    data=pdf_data,
-                    file_name=f"Inventory_{box_id}.pdf",
-                    mime="application/pdf"
-                )
-            except Exception as e:
-                st.error(f"PDF Generation error: {e}")
+            if print_mode:
+                # Inject custom CSS style overrides to clear out sidebars and maximize space for clean printing
+                st.markdown("""
+                    <style>
+                        [data-testid="stSidebar"] {display: none !important;}
+                        [data-testid="stHeader"] {display: none !important;}
+                        footer {visibility: hidden !important;}
+                        .stMainBlockContainer {padding-top: 1rem !important; max-width: 100% !important;}
+                        h1, hr {display: none !important;} /* Hides standard dashboard main titles */
+                        
+                        .print-container {
+                            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                            color: #222;
+                        }
+                        .print-title {
+                            color: #1A237E;
+                            font-size: 24px;
+                            font-weight: bold;
+                            text-align: center;
+                            margin-bottom: 5px;
+                            text-transform: uppercase;
+                        }
+                        .print-subtitle {
+                            text-align: center;
+                            font-size: 14px;
+                            color: #555;
+                            margin-bottom: 25px;
+                            font-weight: 500;
+                        }
+                        .print-meta-table {
+                            width: 100%;
+                            margin-bottom: 20px;
+                            font-size: 15px;
+                        }
+                        .print-grid {
+                            width: 100%;
+                            border-collapse: collapse;
+                            margin-top: 10px;
+                        }
+                        .print-grid th {
+                            background-color: #1A237E !important;
+                            color: white !important;
+                            font-weight: bold;
+                            text-align: left;
+                            padding: 10px;
+                            border: 1px solid #1A237E;
+                            font-size: 14px;
+                        }
+                        .print-grid td {
+                            padding: 10px;
+                            border: 1px solid #DDDDDD;
+                            font-size: 14px;
+                            vertical-align: top;
+                        }
+                        .zebra {
+                            background-color: #F9F9F9;
+                        }
+                        .kannada-text {
+                            font-size: 15px;
+                            font-weight: 500;
+                        }
+                        @media print {
+                            body { background-color: #FFFFFF; }
+                            .print-grid th { background-color: #1A237E !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        }
+                    </style>
+                """, unsafe_allow_html=True)
+                
+                # HTML template variables setup
+                timestamp = pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')
+                
+                # Build custom responsive table structure
+                table_rows_html = ""
+                for idx, (_, row) in enumerate(display_df.iterrows()):
+                    bg_class = 'class="zebra"' if idx % 2 == 0 else ''
+                    table_rows_html += f"""
+                    <tr {bg_class}>
+                        <td>{row["Item ID"]}</td>
+                        <td>{row["CR Number"]}</td>
+                        <td>{row["Section of Law"]}</td>
+                        <td>{row["PF Number"]}</td>
+                        <td class="kannada-text">{row["Type of Article"]}</td>
+                        <td>{row["Status"]}</td>
+                    </tr>
+                    """
+                
+                # Output HTML view container to interface
+                st.markdown(f"""
+                    <div class="print-container">
+                        <div class="print-title">Ramanagar Police Station Muddemal Inventory</div>
+                        <div class="print-subtitle">Official Record Room Storage Manifest</div>
+                        
+                        <table class="print-meta-table">
+                            <tr>
+                                <td><strong>Box Reference ID:</strong> {box_id}</td>
+                                <td style="text-align: right;"><strong>Generated On:</strong> {timestamp}</td>
+                            </tr>
+                        </table>
+                        
+                        <table class="print-grid">
+                            <thead>
+                                <tr>
+                                    <th style="width: 8%;">Item ID</th>
+                                    <th style="width: 15%;">CR / FIR No.</th>
+                                    <th style="width: 15%;">Section of Law</th>
+                                    <th style="width: 15%;">PF Number</th>
+                                    <th style="width: 35%;">Property Description</th>
+                                    <th style="width: 12%;">Current Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {table_rows_html}
+                            </tbody>
+                        </table>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown("---")
+                st.info("💡 **Staff Instruction:** Press **Ctrl + P** (or **Cmd + P** on Mac) right now to print this clean ledger sheet or save it directly as a perfect PDF file. Uncheck the box above to return back to your normal operations.")
+                
+            else:
+                # Normal interactive mode showing standard streamlit tables
+                st.write(f"### Properties currently inside **{box_id}**:")
+                clean_display_df = display_df[["Item ID", "CR Number", "Section of Law", "PF Number", "Type of Article", "Status"]]
+                st.dataframe(clean_display_df.set_index('Item ID'), use_container_width=True)
         else:
             st.info("This box is currently empty.")
 

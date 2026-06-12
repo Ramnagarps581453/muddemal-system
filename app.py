@@ -59,51 +59,13 @@ def get_next_item_id(sheet):
 # --- STREAMLIT INTERFACE ---
 st.set_page_config(page_title="Ramanagar PS Muddemal System", layout="wide")
 
-# --- CUSTOM CSS FOR BOTH SCREEN WRAPPING AND PRINT LAYOUT ---
+# --- GLOBAL INJECTION FOR INTELLIGENT AUTO-PRINT LAYOUT ---
+# This style block ensures that normal web viewing remains interactive, 
+# but pressing Ctrl+P immediately transforms the page into a clean Kannada-friendly print layout.
 st.markdown("""
     <style>
-    /* Global Screen Table Styling to force true multi-line text wrapping */
-    .screen-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 15px 0;
-        font-family: sans-serif;
-        background-color: white;
-        border-radius: 6px;
-        overflow: hidden;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        table-layout: fixed;
-    }
-    .screen-table th {
-        background-color: #f1f3f6;
-        color: #333333;
-        font-weight: 600;
-        text-align: left;
-        padding: 12px;
-        border-bottom: 2px solid #dee2e6;
-        font-size: 14px;
-    }
-    .screen-table td {
-        padding: 12px;
-        border-bottom: 1px solid #dee2e6;
-        color: #212529;
-        font-size: 14px;
-        vertical-align: top;
-        white-space: normal !important; 
-        word-wrap: break-word !important;
-        overflow-wrap: anywhere !important;
-        word-break: break-word !important;
-    }
-    .screen-table tr:hover {
-        background-color: #f8f9fa;
-    }
-    .kannada-text {
-        font-size: 15px;
-        line-height: 1.5;
-    }
-
-    /* Print Specific Media Styles */
     @media print {
+        /* Hide all Streamlit structural sidebars, headers, and interactive buttons */
         [data-testid="stSidebar"] {display: none !important;}
         [data-testid="stHeader"] {display: none !important;}
         footer {visibility: hidden !important;}
@@ -112,8 +74,7 @@ st.markdown("""
         [data-testid="stMetricWidget"] {display: none !important;}
         .stMainBlockContainer {padding: 0rem !important; margin: 0rem !important; max-width: 100% !important;}
         
-        .screen-table { display: none !important; } 
-        
+        /* Force display of the dedicated print structure */
         .print-container {
             display: block !important;
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -133,35 +94,28 @@ st.markdown("""
             color: #444 !important;
             margin-bottom: 25px !important;
         }
-        .print-grid { width: 100%; border-collapse: collapse; margin-top: 10px; table-layout: fixed; }
         .print-grid th { 
             background-color: #1A237E !important; 
             color: white !important;
             -webkit-print-color-adjust: exact; 
             print-color-adjust: exact; 
-            padding: 10px;
-            font-size: 14px;
-            border: 1px solid #1A237E;
         }
         .print-grid td {
             color: #000000 !important;
             border: 1px solid #000000 !important;
-            padding: 10px;
-            font-size: 14px;
-            vertical-align: top;
-            white-space: normal !important;
-            word-wrap: break-word !important;
-            overflow-wrap: anywhere !important;
-            word-break: break-word !important;
         }
     }
     
-    /* Screen Fallbacks for Hidden Print Elements */
-    .print-container { display: none; }
+    /* Screen Styles for the Hidden Print Container */
+    .print-container { font-family: sans-serif; }
     .print-title { color: #1A237E; font-size: 24px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
     .print-subtitle { text-align: center; font-size: 14px; color: #555; margin-bottom: 25px; font-weight: 500; }
     .print-meta-table { width: 100%; margin-bottom: 20px; font-size: 15px; }
+    .print-grid { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .print-grid th { background-color: #1A237E; color: white; font-weight: bold; text-align: left; padding: 10px; border: 1px solid #1A237E; font-size: 14px; }
+    .print-grid td { padding: 10px; border: 1px solid #DDDDDD; font-size: 14px; vertical-align: top; }
     .zebra { background-color: #F9F9F9; }
+    .kannada-text { font-size: 15px; font-weight: 500; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -180,8 +134,11 @@ search_query = st.sidebar.text_input("Search FIR, PF, or Article Name").strip().
 
 st.sidebar.markdown("---")
 menu = ["View & Update Box", "Register Properties", "Move Property", "Edit / Delete Records", "Generate QR Codes"]
+
+# Fix: If a QR code is scanned, default to "View & Update Box", but allow choice to change freely
 choice = st.sidebar.selectbox("Navigation Menu", menu, index=0)
 
+# Clear QR memory button if param exists to allow resetting the view completely
 if scanned_box:
     if st.sidebar.button("🔄 Clear Scanned Box Filter"):
         st.query_params.clear()
@@ -207,12 +164,8 @@ if search_query:
     if not filtered_df.empty:
         filtered_df["CR Number"] = filtered_df["FIR Number"].astype(str) + "/" + filtered_df["FIR Year"].astype(str)
         filtered_df["PF Number Formatted"] = filtered_df["PF Number"].astype(str) + "/" + filtered_df["PF Year"].astype(str)
-        
-        search_html = """<table class="screen-table"><thead><tr><th style="width: 8%;">Item ID</th><th style="width: 10%;">Box ID</th><th style="width: 12%;">CR Number</th><th style="width: 23%;">Section of Law</th><th style="width: 12%;">PF Number</th><th style="width: 25%;">Type of Article</th><th style="width: 10%;">Status</th></tr></thead><tbody>"""
-        for _, row in filtered_df.iterrows():
-            search_html += f"""<tr><td>{row['Item ID']}</td><td>{row['Box ID']}</td><td>{row['CR Number']}</td><td>{row['Section of Law']}</td><td>{row['PF Number Formatted']}</td><td class="kannada-text">{row['Type of Article']}</td><td>{row['Status']}</td></tr>"""
-        search_html += "</tbody></table>"
-        st.markdown(search_html, unsafe_allow_html=True)
+        display_search = filtered_df[["Item ID", "Box ID", "CR Number", "Section of Law", "PF Number Formatted", "Type of Article", "Status"]]
+        st.dataframe(display_search.set_index('Item ID'), use_container_width=True)
     else:
         st.info("No matching records found across any box.")
     st.markdown("---")
@@ -223,6 +176,7 @@ if search_query:
 if choice == "View & Update Box":
     st.subheader("📦 Box Inventory Details")
     
+    # Check if we should auto-select a box from a QR code scan
     if scanned_box and scanned_box in available_boxes:
         box_id = st.selectbox("Selected Box", available_boxes, index=available_boxes.index(scanned_box))
     elif available_boxes:
@@ -239,40 +193,15 @@ if choice == "View & Update Box":
             display_df["CR Number"] = display_df["FIR Number"].astype(str) + "/" + display_df["FIR Year"].astype(str)
             display_df["PF Number"] = display_df["PF Number"].astype(str) + "/" + display_df["PF Year"].astype(str)
             
+            # --- INTERACTIVE SCREEN UI ---
             st.markdown(f"### Properties currently inside **{box_id}**:")
+            clean_display_df = display_df[["Item ID", "CR Number", "Section of Law", "PF Number", "Type of Article", "Status"]]
+            st.dataframe(clean_display_df.set_index('Item ID'), use_container_width=True)
             
-            screen_html = """
-            <table class="screen-table no-print">
-                <thead>
-                    <tr>
-                        <th style="width: 8%;">Item ID</th>
-                        <th style="width: 12%;">CR Number</th>
-                        <th style="width: 23%;">Section of Law</th>
-                        <th style="width: 12%;">PF Number</th>
-                        <th style="width: 35%;">Type of Article</th>
-                        <th style="width: 10%;">Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-            """
-            for _, row in display_df.iterrows():
-                screen_html += f"""
-                    <tr>
-                        <td><strong>{row['Item ID']}</strong></td>
-                        <td>{row['CR Number']}</td>
-                        <td>{row['Section of Law']}</td>
-                        <td>{row['PF Number']}</td>
-                        <td class="kannada-text">{row['Type of Article']}</td>
-                        <td>{row['Status']}</td>
-                    </tr>
-                """
-            screen_html += "</tbody></table>"
-            st.markdown(screen_html, unsafe_allow_html=True)
-            
-            # --- INVISIBLE PRINT LAYOUT GENERATION ---
+            # --- INVISIBLE PRINT LAYOUT GENERATION (Triggers only when Ctrl+P is pressed) ---
             timestamp = pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')
             html_output = f"""
-            <div class="print-container">
+            <div class="print-container" style="display: none;">
                 <div class="print-title">Ramanagar Police Station Muddemal Inventory</div>
                 <div class="print-subtitle">Official Record Room Storage Manifest</div>
                 <table class="print-meta-table">
@@ -285,11 +214,11 @@ if choice == "View & Update Box":
                     <thead>
                         <tr>
                             <th style="width: 8%;">Item ID</th>
-                            <th style="width: 14%;">CR / FIR No.</th>
-                            <th style="width: 23%;">Section of Law</th>
-                            <th style="width: 13%;">PF Number</th>
-                            <th style="width: 32%;">Property Description</th>
-                            <th style="width: 10%;">Current Status</th>
+                            <th style="width: 15%;">CR / FIR No.</th>
+                            <th style="width: 15%;">Section of Law</th>
+                            <th style="width: 15%;">PF Number</th>
+                            <th style="width: 35%;">Property Description</th>
+                            <th style="width: 12%;">Current Status</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -348,12 +277,7 @@ elif choice == "Register Properties":
                 with st.expander(f"View {len(box_items)} items already inside {target_box}"):
                     view_df = box_items.copy()
                     view_df["CR Number"] = view_df["FIR Number"].astype(str) + "/" + view_df["FIR Year"].astype(str)
-                    
-                    sub_table = """<table class="screen-table"><thead><tr><th style="width: 30%;">CR Number</th><th style="width: 70%;">Type of Article</th></tr></thead><tbody>"""
-                    for _, row in view_df.iterrows():
-                        sub_table += f"""<tr><td>{row['CR Number']}</td><td class="kannada-text">{row['Type of Article']}</td></tr>"""
-                    sub_table += "</tbody></table>"
-                    st.markdown(sub_table, unsafe_allow_html=True)
+                    st.dataframe(view_df[["CR Number", "Type of Article"]], use_container_width=True, hide_index=True)
             else:
                 st.caption(f"{target_box} is currently empty.")
             
@@ -429,9 +353,7 @@ elif choice == "Move Property":
             edited_items_df = st.data_editor(
                 box_items[["Select to Move", "Item ID", "CR Number", "Type of Article", "Status"]],
                 hide_index=True,
-                column_config={
-                    "Select to Move": st.column_config.CheckboxColumn(required=True),
-                },
+                column_config={"Select to Move": st.column_config.CheckboxColumn(required=True)},
                 disabled=["Item ID", "CR Number", "Type of Article", "Status"], 
                 use_container_width=True
             )
@@ -497,7 +419,7 @@ elif choice == "Edit / Delete Records":
                         with colD: e_pf = st.text_input("PF Number", value=row['PF Number'], key=f"p_{item_id}")
                         with colE: e_pf_year = st.text_input("PF Year", value=row['PF Year'], key=f"py_{item_id}")
                             
-                        e_item_name = st.text_input("Type of Article", value=row['Type_of_Article'] if 'Type_of_Article' in row else row.get('Type of Article', ''), key=f"n_{item_id}")
+                        e_item_name = st.text_input("Type of Article", value=row['Type of Article'], key=f"n_{item_id}")
                         e_status = st.selectbox("Change Status", ["In Room", "Submitted to Court with Charge Sheet", "Released to Owner", "Sent to FSL", "Disposed / Destroyed"], index=["In Room", "Submitted to Court with Charge Sheet", "Released to Owner", "Sent to FSL", "Disposed / Destroyed"].index(row['Status']) if row['Status'] in ["In Room", "Submitted to Court with Charge Sheet", "Released to Owner", "Sent to FSL", "Disposed / Destroyed"] else 0, key=f"st_{item_id}")
                         
                         if st.button("Save Changes", type="primary", key=f"save_{item_id}"):

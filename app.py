@@ -62,12 +62,15 @@ def get_next_item_id(sheet):
         ids = [int(x) for x in col_values[1:] if x.isdigit()]
         return max(ids) + 1 if ids else 1
 
-# --- FIXED PDF GENERATOR WITH FULL KANNADA GLYPH JOINING ---
+# --- FIXED PDF GENERATOR ---
 def generate_box_pdf(box_id, dataframe):
     # Initialize PDF object in Landscape layout
     pdf = FPDF(orientation="L", unit="mm", format="letter")
     pdf.set_margin(10)
     pdf.add_page()
+    
+    # FIXED: Enable global text shaping for Indic fonts immediately on initialization
+    pdf.str_shape = True
     
     # Register and explicitly configure the Kannada font path
     FONT_PATH = "NotoSansKannada-Regular.ttf"
@@ -88,8 +91,8 @@ def generate_box_pdf(box_id, dataframe):
     pdf.cell(0, 6, text=f"Generated On: {pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')}", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
     
-    # Define exact table structure width parameters (Total 255mm)
-    col_widths = [15, 35, 45, 35, 90, 35]
+    # Define exact table structure width parameters (Total 250mm)
+    col_widths = [15, 35, 45, 35, 85, 35]
     headers = ["Item ID", "CR / FIR No.", "Section of Law", "PF Number", "Property Description", "Current Status"]
     
     # Render Table Header Row
@@ -117,29 +120,28 @@ def generate_box_pdf(box_id, dataframe):
         desc_str = str(row["Type of Article"])
         status_str = str(row["Status"])
         
-        # Calculate row height dynamically using the property description column width (90mm)
-        # This keeps the layout cell borders uniform across the row block
-        lines = len(pdf.multi_cell(col_widths[4], 8, text=desc_str, dry_run=True))
-        row_height = max(8, lines * 6)
+        # Safely compute how many wrapped text lines are needed for the cell height
+        lines = pdf.multi_cell(col_widths[4], 8, text=desc_str, dry_run=True)
+        num_lines = len(lines) if isinstance(lines, list) else 1
+        row_height = max(8, num_lines * 6)
         
-        # Draw table line row items cleanly using modern text layout routing rules
-        start_x = pdf.get_x()
-        start_y = pdf.get_y()
+        # Track position coordinates
+        curr_x = pdf.get_x()
+        curr_y = pdf.get_y()
         
+        # Print standard left-hand cells uniformly
         pdf.cell(col_widths[0], row_height, text=item_id_str, border=1, fill=True)
         pdf.cell(col_widths[1], row_height, text=cr_str, border=1, fill=True)
         pdf.cell(col_widths[2], row_height, text=sec_str, border=1, fill=True)
         pdf.cell(col_widths[3], row_height, text=pf_str, border=1, fill=True)
         
-        # PROPERTY DESCRIPTION COLUMN (Renders the complex text layout with text shaping integration)
-        curr_x = pdf.get_x()
-        curr_y = pdf.get_y()
-        # ENFORCE ADVANCED TEXT SHAPING CONTEXT: Ensures characters bind perfectly
-        with pdf.local_context(text_shaping=True):
-            pdf.multi_cell(col_widths[4], (row_height / lines), text=desc_str, border=1, fill=True, align="L")
+        # PROPERTY DESCRIPTION COLUMN (Renders the text using the global text shaping setup)
+        desc_x = pdf.get_x()
+        desc_y = pdf.get_y()
+        pdf.multi_cell(col_widths[4], (row_height / num_lines), text=desc_str, border=1, fill=True, align="L")
             
-        # Re-align position tracker vector to structural column endpoint
-        pdf.set_xy(curr_x + col_widths[4], curr_y)
+        # Reset positioning vector cleanly to print final status item row block cell
+        pdf.set_xy(desc_x + col_widths[4], desc_y)
         pdf.cell(col_widths[5], row_height, text=status_str, border=1, fill=True)
         
         pdf.ln(row_height)

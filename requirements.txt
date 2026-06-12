@@ -4,4 +4,3 @@ qrcode
 Pillow
 gspread
 oauth2client
-reportlab

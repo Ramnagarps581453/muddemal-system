@@ -60,12 +60,9 @@ def get_next_item_id(sheet):
 st.set_page_config(page_title="Ramanagar PS Muddemal System", layout="wide")
 
 # --- GLOBAL INJECTION FOR INTELLIGENT AUTO-PRINT LAYOUT ---
-# This style block ensures that normal web viewing remains interactive, 
-# but pressing Ctrl+P immediately transforms the page into a clean Kannada-friendly print layout.
 st.markdown("""
     <style>
     @media print {
-        /* Hide all Streamlit structural sidebars, headers, and interactive buttons */
         [data-testid="stSidebar"] {display: none !important;}
         [data-testid="stHeader"] {display: none !important;}
         footer {visibility: hidden !important;}
@@ -74,7 +71,6 @@ st.markdown("""
         [data-testid="stMetricWidget"] {display: none !important;}
         .stMainBlockContainer {padding: 0rem !important; margin: 0rem !important; max-width: 100% !important;}
         
-        /* Force display of the dedicated print structure */
         .print-container {
             display: block !important;
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -99,6 +95,7 @@ st.markdown("""
             color: white !important;
             -webkit-print-color-adjust: exact; 
             print-color-adjust: exact; 
+            padding: 10px;
         }
         .print-grid td {
             color: #000000 !important;
@@ -106,7 +103,6 @@ st.markdown("""
         }
     }
     
-    /* Screen Styles for the Hidden Print Container */
     .print-container { font-family: sans-serif; }
     .print-title { color: #1A237E; font-size: 24px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
     .print-subtitle { text-align: center; font-size: 14px; color: #555; margin-bottom: 25px; font-weight: 500; }
@@ -134,11 +130,8 @@ search_query = st.sidebar.text_input("Search FIR, PF, or Article Name").strip().
 
 st.sidebar.markdown("---")
 menu = ["View & Update Box", "Register Properties", "Move Property", "Edit / Delete Records", "Generate QR Codes"]
-
-# Fix: If a QR code is scanned, default to "View & Update Box", but allow choice to change freely
 choice = st.sidebar.selectbox("Navigation Menu", menu, index=0)
 
-# Clear QR memory button if param exists to allow resetting the view completely
 if scanned_box:
     if st.sidebar.button("🔄 Clear Scanned Box Filter"):
         st.query_params.clear()
@@ -176,7 +169,6 @@ if search_query:
 if choice == "View & Update Box":
     st.subheader("📦 Box Inventory Details")
     
-    # Check if we should auto-select a box from a QR code scan
     if scanned_box and scanned_box in available_boxes:
         box_id = st.selectbox("Selected Box", available_boxes, index=available_boxes.index(scanned_box))
     elif available_boxes:
@@ -198,7 +190,24 @@ if choice == "View & Update Box":
             clean_display_df = display_df[["Item ID", "CR Number", "Section of Law", "PF Number", "Type of Article", "Status"]]
             st.dataframe(clean_display_df.set_index('Item ID'), use_container_width=True)
             
-            # --- INVISIBLE PRINT LAYOUT GENERATION (Triggers only when Ctrl+P is pressed) ---
+            # --- NEW EXTENSION: EXCEL GENERATION METHOD ---
+            excel_df = display_df[["CR Number", "Section of Law", "PF Number", "Type of Article", "Status"]].copy()
+            
+            # Compile file strictly in the computer's memory bank to prevent deployment crashes
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                excel_df.to_excel(writer, index=False, sheet_name=str(box_id))
+            buffer.seek(0)
+            
+            # Action button rendering
+            st.download_button(
+                label="📥 Download Box Inventory as Excel",
+                data=buffer,
+                file_name=f"Inventory_{box_id}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            
+            # --- INVISIBLE PRINT LAYOUT GENERATION ---
             timestamp = pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')
             html_output = f"""
             <div class="print-container" style="display: none;">

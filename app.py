@@ -56,16 +56,6 @@ def get_next_item_id(sheet):
         ids = [int(x) for x in col_values[1:] if x.isdigit()]
         return max(ids) + 1 if ids else 1
 
-# Helper function to inject spaces after punctuation to force text wrapping
-def clean_text_for_wrap(text):
-    text_str = str(text)
-    # Adds a space after commas if there isn't one
-    text_str = text_str.replace(",", ", ")
-    # Adds a space around hyphens for long descriptions like slip-01
-    text_str = text_str.replace("-", " - ")
-    # Clean up double spaces caused by replacement
-    return " ".join(text_str.split())
-
 # --- STREAMLIT INTERFACE ---
 st.set_page_config(page_title="Ramanagar PS Muddemal System", layout="wide")
 
@@ -82,7 +72,7 @@ st.markdown("""
         border-radius: 6px;
         overflow: hidden;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        table-layout: fixed; /* Forces column widths to be strictly obeyed */
+        table-layout: fixed;
     }
     .screen-table th {
         background-color: #f1f3f6;
@@ -99,8 +89,6 @@ st.markdown("""
         color: #212529;
         font-size: 14px;
         vertical-align: top;
-        
-        /* POWERFUL CSS TO FORCE BOX WRAPPING AT ALL COSTS */
         white-space: normal !important; 
         word-wrap: break-word !important;
         overflow-wrap: anywhere !important;
@@ -222,9 +210,7 @@ if search_query:
         
         search_html = """<table class="screen-table"><thead><tr><th style="width: 8%;">Item ID</th><th style="width: 10%;">Box ID</th><th style="width: 12%;">CR Number</th><th style="width: 23%;">Section of Law</th><th style="width: 12%;">PF Number</th><th style="width: 25%;">Type of Article</th><th style="width: 10%;">Status</th></tr></thead><tbody>"""
         for _, row in filtered_df.iterrows():
-            sec_clean = clean_text_for_wrap(row['Section of Law'])
-            art_clean = clean_text_for_wrap(row['Type of Article'])
-            search_html += f"""<tr><td>{row['Item ID']}</td><td>{row['Box ID']}</td><td>{row['CR Number']}</td><td>{sec_clean}</td><td>{row['PF Number Formatted']}</td><td class="kannada-text">{art_clean}</td><td>{row['Status']}</td></tr>"""
+            search_html += f"""<tr><td>{row['Item ID']}</td><td>{row['Box ID']}</td><td>{row['CR Number']}</td><td>{row['Section of Law']}</td><td>{row['PF Number Formatted']}</td><td class="kannada-text">{row['Type of Article']}</td><td>{row['Status']}</td></tr>"""
         search_html += "</tbody></table>"
         st.markdown(search_html, unsafe_allow_html=True)
     else:
@@ -270,17 +256,13 @@ if choice == "View & Update Box":
                 <tbody>
             """
             for _, row in display_df.iterrows():
-                # Process fields through the clean-wrapper text rule right before rendering
-                clean_section = clean_text_for_wrap(row['Section of Law'])
-                clean_article = clean_text_for_wrap(row['Type of Article'])
-                
                 screen_html += f"""
                     <tr>
                         <td><strong>{row['Item ID']}</strong></td>
                         <td>{row['CR Number']}</td>
-                        <td>{clean_section}</td>
+                        <td>{row['Section of Law']}</td>
                         <td>{row['PF Number']}</td>
-                        <td class="kannada-text">{clean_article}</td>
+                        <td class="kannada-text">{row['Type of Article']}</td>
                         <td>{row['Status']}</td>
                     </tr>
                 """
@@ -314,16 +296,13 @@ if choice == "View & Update Box":
             """
             for idx, row in display_df.reset_index().iterrows():
                 bg_class = 'class="zebra"' if idx % 2 == 0 else ''
-                print_section = clean_text_for_wrap(row["Section of Law"])
-                print_article = clean_text_for_wrap(row["Type of Article"])
-                
                 html_output += f"""
                         <tr {bg_class}>
                             <td>{str(row["Item ID"])}</td>
                             <td>{str(row["CR Number"])}</td>
-                            <td>{print_section}</td>
+                            <td>{str(row["Section of Law"])}</td>
                             <td>{str(row["PF Number"])}</td>
-                            <td class="kannada-text">{print_article}</td>
+                            <td class="kannada-text">{str(row["Type of Article"])}</td>
                             <td>{str(row["Status"])}</td>
                         </tr>
                 """
@@ -372,8 +351,7 @@ elif choice == "Register Properties":
                     
                     sub_table = """<table class="screen-table"><thead><tr><th style="width: 30%;">CR Number</th><th style="width: 70%;">Type of Article</th></tr></thead><tbody>"""
                     for _, row in view_df.iterrows():
-                        clean_art_view = clean_text_for_wrap(row['Type of Article'])
-                        sub_table += f"""<tr><td>{row['CR Number']}</td><td class="kannada-text">{clean_art_view}</td></tr>"""
+                        sub_table += f"""<tr><td>{row['CR Number']}</td><td class="kannada-text">{row['Type of Article']}</td></tr>"""
                     sub_table += "</tbody></table>"
                     st.markdown(sub_table, unsafe_allow_html=True)
             else:

@@ -319,15 +319,18 @@ elif choice == "Edit / Delete Records":
         st.info("No boxes available.")
 
 # =====================================================================
-# WORKFLOW 5: GENERATE QR CODES (UPDATED FOR PUBLIC DEPLOYMENT)
+# WORKFLOW 5: GENERATE QR CODES
 # =====================================================================
 elif choice == "Generate QR Codes":
-    st.subheader("??? Print Static Box QR Codes")
+    st.subheader("🖨️ Print Static Box QR Codes")
     
-    st.info("?? Enter your Streamlit Cloud Web Link below (Leave out the slash at the end).")
+    # HARDCODED PUBLIC URL - NO INPUT BOX MISTAKES POSSIBLE
+    public_url = "https://muddemal-system-s3e4dhhy2wdwpsbxhsjxyr.streamlit.app/"
     
-    public_url = st.text_input("Streamlit App Link", value="https://muddemal-system-s3e4dhhy2wdwpsbxhsjxyr.streamlit.app/")
-    
+    # Automatically clean up trailing slashes if present
+    if public_url.endswith("/"):
+        public_url = public_url[:-1]
+        
     if available_boxes:
         selected_qr_box = st.selectbox("Select Box to generate QR", available_boxes)
         
@@ -342,7 +345,7 @@ elif choice == "Generate QR Codes":
         img.save(buf, format="PNG")
         st.image(buf.getvalue(), caption=f"QR Code Link: {qr_url}", width=250)
         
-        st.markdown(f"?? **[Click here to test opening this box's link]({qr_url})**")
+        st.markdown(f"🔗 **[Click here to test opening this box's link]({qr_url})**")
         
         st.download_button(
             label=f"Download QR Code Sticker for {selected_qr_box}",

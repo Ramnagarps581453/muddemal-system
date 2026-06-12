@@ -8,6 +8,15 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import json
 
+# Try to import reportlab for PDF generation
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+except ImportError:
+    st.error("Please add 'reportlab' to your requirements.txt file to enable PDF downloading.")
+
 # --- AUTO IP DETECTOR (For local testing before cloud deployment) ---
 def get_auto_ip():
     try:
@@ -57,6 +66,69 @@ def get_next_item_id(sheet):
         ids = [int(x) for x in col_values[1:] if x.isdigit()]
         return max(ids) + 1 if ids else 1
 
+def generate_box_pdf(box_id, dataframe):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    story = []
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'PDFTitle',
+        parent=styles['Heading1'],
+        fontSize=16,
+        leading=20,
+        textColor=colors.HexColor('#1A237E'),
+        alignment=1, # Center
+        spaceAfter=15
+    )
+    
+    normal_style = ParagraphStyle(
+        'PDFNormal',
+        parent=styles['Normal'],
+        fontSize=10,
+        leading=14
+    )
+    
+    # Header Elements
+    story.append(Paragraph(f"<b>RAMANAGAR POLICE STATION MUDDEMAL INVENTORY</b>", title_style))
+    story.append(Paragraph(f"<b>Box Reference ID:</b> {box_id}", normal_style))
+    story.append(Paragraph(f"<b>Generated On:</b> {pd.Timestamp.now().strftime('%d-%m-%Y %I:%M %p')}", normal_style))
+    story.append(Spacer(1, 15))
+    
+    # Build Table Data
+    table_data = [["Item ID", "CR / FIR Number", "Section of Law", "PF Number", "Property Description", "Current Status"]]
+    
+    for _, row in dataframe.iterrows():
+        table_data.append([
+            str(row["Item ID"]),
+            str(row["CR Number"]),
+            str(row["Section of Law"]),
+            str(row["PF Number"]),
+            Paragraph(str(row["Type of Article"]), normal_style),
+            str(row["Status"])
+        ])
+        
+    # PDF Table Styling
+    pdf_table = Table(table_data, colWidths=[50, 85, 85, 80, 160, 90])
+    pdf_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A237E')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('TOPPADDING', (0, 0), (-1, 0), 8),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#D3D3D3')),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+    ]))
+    
+    story.append(pdf_table)
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
 # --- STREAMLIT INTERFACE ---
 st.set_page_config(page_title="Ramanagar PS Muddemal System", layout="wide")
 st.title("?? Ramanagar Police Station Muddemal Room")
@@ -66,6 +138,11 @@ st.markdown("---")
 query_params = st.query_params
 scanned_box = query_params.get("box_id", None)
 
+# --- SIDEBAR SEARCH & NAVIGATION ---
+st.sidebar.header("🔍 Global Search")
+search_query = st.sidebar.text_input("Search FIR, PF, or Article Name").strip().lower()
+
+st.sidebar.markdown("---")
 menu = ["View & Update Box", "Register Properties", "Move Property", "Edit / Delete Records", "Generate QR Codes"]
 choice = st.sidebar.selectbox("Navigation Menu", menu, index=0 if scanned_box else 0)
 
@@ -78,11 +155,30 @@ with st.spinner("Syncing with Google Database..."):
 
     available_boxes = boxes_df["Box ID"].tolist() if not boxes_df.empty else []
 
+# --- DISPLAY GLOBAL SEARCH RESULTS IF QUERY IS PRESENT ---
+if search_query:
+    st.subheader(f"🔎 Search Results for: '{search_query}'")
+    
+    filtered_df = items_df[
+        items_df["FIR Number"].astype(str).str.lower().str.contains(search_query) |
+        items_df["PF Number"].astype(str).str.lower().str.contains(search_query) |
+        items_df["Type of Article"].astype(str).str.lower().str.contains(search_query)
+    ].copy()
+    
+    if not filtered_df.empty:
+        filtered_df["CR Number"] = filtered_df["FIR Number"].astype(str) + "/" + filtered_df["FIR Year"].astype(str)
+        filtered_df["PF Number Formatted"] = filtered_df["PF Number"].astype(str) + "/" + filtered_df["PF Year"].astype(str)
+        display_search = filtered_df[["Item ID", "Box ID", "CR Number", "Section of Law", "PF Number Formatted", "Type of Article", "Status"]]
+        st.dataframe(display_search.set_index('Item ID'), use_container_width=True)
+    else:
+        st.info("No matching records found across any box.")
+    st.markdown("---")
+
 # =====================================================================
-# WORKFLOW 1: VIEW & UPDATE ITEMS
+# WORKFLOW 1: VIEW ITEMS (CLEAN QR VIEW WITH PDF GENERATION)
 # =====================================================================
 if choice == "View & Update Box" or scanned_box:
-    st.subheader("?? Box Inventory Details")
+    st.subheader("📦 Box Inventory Details")
     
     if scanned_box and scanned_box in available_boxes:
         box_id = st.selectbox("Selected Box", available_boxes, index=available_boxes.index(scanned_box))
@@ -101,20 +197,22 @@ if choice == "View & Update Box" or scanned_box:
             display_df = box_items.copy()
             display_df["CR Number"] = display_df["FIR Number"].astype(str) + "/" + display_df["FIR Year"].astype(str)
             display_df["PF Number"] = display_df["PF Number"].astype(str) + "/" + display_df["PF Year"].astype(str)
-            display_df = display_df[["Item ID", "CR Number", "Section of Law", "PF Number", "Type of Article", "Status"]]
+            raw_pdf_df = display_df.copy() # Safe copy for parsing to ReportLab
             
+            display_df = display_df[["Item ID", "CR Number", "Section of Law", "PF Number", "Type of Article", "Status"]]
             st.dataframe(display_df.set_index('Item ID'), use_container_width=True)
             
-            st.markdown("### ?? Dispatch to Court / Update Status")
-            selected_item_id = st.selectbox("Select Item ID to update", box_items['Item ID'].tolist())
-            new_status = st.selectbox("Change Status to", ["In Room", "Submitted to Court with Charge Sheet", "Released to Owner", "Sent to FSL", "Disposed / Destroyed"])
-            
-            if st.button("Update Status"):
-                with st.spinner("Updating Google Database..."):
-                    row_idx = get_row_by_item_id(items_sheet, selected_item_id)
-                    items_sheet.update_cell(row_idx, 9, new_status) # Column 9 is Status
-                st.success(f"Status updated successfully! Refreshing...")
-                st.rerun()
+            # PDF Generation Button Trigger
+            try:
+                pdf_data = generate_box_pdf(box_id, raw_pdf_df)
+                st.download_button(
+                    label=f"📥 Download Detailed PDF Inventory ({box_id})",
+                    data=pdf_data,
+                    file_name=f"Inventory_{box_id}.pdf",
+                    mime="application/pdf"
+                )
+            except NameError:
+                st.warning("PDF Generation is unavailable because the 'reportlab' package is not installed.")
         else:
             st.info("This box is currently empty.")
 
@@ -156,10 +254,10 @@ elif choice == "Register Properties":
             st.write("### Step 2: Enter Case Details")
             col1, col2, col3, col4, col5 = st.columns([2, 1, 3, 2, 1])
             with col1: fir_no = st.text_input("FIR Number")
-            with col2: fir_year = st.text_input("FIR Year", value="2024")
+            with col2: fir_year = st.text_input("FIR Year", value="2026")
             with col3: sec_law = st.text_input("Section of Law")
             with col4: pf_no = st.text_input("PF Number")
-            with col5: pf_year = st.text_input("PF Year", value="2024")
+            with col5: pf_year = st.text_input("PF Year", value="2026")
                 
             st.markdown("### Step 3: Add Properties for this Case")
             item_name = st.text_input("Type of Article (e.g., 1 Black Wallet, Vivo Mobile Phone)")
@@ -253,7 +351,7 @@ elif choice == "Move Property":
         st.info("You need at least two boxes created to use the move feature.")
 
 # =====================================================================
-# WORKFLOW 4: EDIT / DELETE EXISTING RECORDS
+# WORKFLOW 4: EDIT / DELETE / STATUS UPDATE RECORDS
 # =====================================================================
 elif choice == "Edit / Delete Records":
     st.subheader("?? Edit or Permanently Delete Records")
@@ -282,7 +380,7 @@ elif choice == "Edit / Delete Records":
                     
                     col1, col2 = st.columns([6, 1])
                     with col1:
-                        st.markdown(f"**Item ID {item_id}:** {row['Type of Article']} (PF: {row['PF Number']}/{row['PF Year']}, Sec: {row['Section of Law']})")
+                        st.markdown(f"**Item ID {item_id}:** {row['Type of Article']} (PF: {row['PF Number']}/{row['PF Year']}, Sec: {row['Section of Law']}) | *Current Status: {row['Status']}*")
                     with col2:
                         if st.button("??? Delete", key=f"del_{item_id}"):
                             with st.spinner("Deleting record..."):
@@ -290,7 +388,7 @@ elif choice == "Edit / Delete Records":
                                 items_sheet.delete_rows(row_idx)
                             st.rerun()
                     
-                    with st.expander(f"?? Edit Details for Item {item_id}"):
+                    with st.expander(f"?? Edit Details & Status for Item {item_id}"):
                         colA, colB, colC, colD, colE = st.columns([2, 1, 3, 2, 1])
                         with colA: e_fir = st.text_input("FIR Number", value=row['FIR Number'], key=f"f_{item_id}")
                         with colB: e_fir_year = st.text_input("FIR Year", value=row['FIR Year'], key=f"fy_{item_id}")
@@ -299,6 +397,7 @@ elif choice == "Edit / Delete Records":
                         with colE: e_pf_year = st.text_input("PF Year", value=row['PF Year'], key=f"py_{item_id}")
                             
                         e_item_name = st.text_input("Type of Article", value=row['Type of Article'], key=f"n_{item_id}")
+                        e_status = st.selectbox("Change Status", ["In Room", "Submitted to Court with Charge Sheet", "Released to Owner", "Sent to FSL", "Disposed / Destroyed"], index=["In Room", "Submitted to Court with Charge Sheet", "Released to Owner", "Sent to FSL", "Disposed / Destroyed"].index(row['Status']) if row['Status'] in ["In Room", "Submitted to Court with Charge Sheet", "Released to Owner", "Sent to FSL", "Disposed / Destroyed"] else 0, key=f"st_{item_id}")
                         
                         if st.button("?? Save Changes", type="primary", key=f"save_{item_id}"):
                             with st.spinner("Saving edits..."):
@@ -309,6 +408,7 @@ elif choice == "Edit / Delete Records":
                                 items_sheet.update_cell(row_idx, 6, e_pf)
                                 items_sheet.update_cell(row_idx, 7, e_pf_year)
                                 items_sheet.update_cell(row_idx, 8, e_item_name)
+                                items_sheet.update_cell(row_idx, 9, e_status)
                             st.success("Record updated successfully!")
                             st.rerun()
                     
@@ -324,10 +424,8 @@ elif choice == "Edit / Delete Records":
 elif choice == "Generate QR Codes":
     st.subheader("🖨️ Print Static Box QR Codes")
     
-    # HARDCODED PUBLIC URL - NO INPUT BOX MISTAKES POSSIBLE
     public_url = "https://muddemal-system-s3e4dhhy2wdwpsbxhsjxyr.streamlit.app/"
     
-    # Automatically clean up trailing slashes if present
     if public_url.endswith("/"):
         public_url = public_url[:-1]
         

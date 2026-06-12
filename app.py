@@ -237,11 +237,8 @@ if choice == "View & Update Box":
             
             st.markdown(f"### Properties currently inside **{box_id}**:")
             
-            # =====================================================================
-            # FIXED IMPLEMENTATION: NATIVE HTML WITH EXPLICIT COLUMN WRAPPING
-            # =====================================================================
-            # This directly overrides Streamlit's default behaviour, forcing text onto 
-            # new lines below if it grows too long, expanding rows dynamically.
+            # --- FIX: FULLY ENCAPSULATED RE-BUILT TABLE ---
+            # Every single time a new box is selected, the header table resets entirely clean.
             screen_html = """
             <table class="screen-table no-print">
                 <thead>
